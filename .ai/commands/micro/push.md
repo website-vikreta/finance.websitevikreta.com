@@ -27,8 +27,8 @@ Run the **push** command recipe, or invoke `/push` if your tool supports slash c
 - Fail → STOP. No commit, no push. Report and fix.
 
 ### 3. Branch (flow: `AGENTS.md` → Git Flow)
-- Find the current release: `git branch -r --list 'origin/release/*' | sort | tail -1`.
-- On `main`, `stage` or a `release/*` branch → `git checkout -b <type>/<kebab-slug> origin/release/<YYYY-MM>` (`feat`, `fix`, `refactor`, `perf`, `chore`, `docs`, `style`). Never commit straight to `main`, `stage` or `release/*`.
+- Find the current release: `git branch -r --list 'origin/releases/*' | sort | tail -1`.
+- On `main`, `stage` or a `releases/*` branch → `git checkout -b <type>/<kebab-slug> origin/releases/<YYYY-MM>` (`feat`, `fix`, `refactor`, `perf`, `chore`, `docs`, `style`). Never commit straight to `main`, `stage` or `releases/*`.
 - On a feature branch → stay on it.
 
 ### 4. Split into logical commits
@@ -39,7 +39,7 @@ Run the **push** command recipe, or invoke `/push` if your tool supports slash c
 ### 5. Push + PR
 - No `origin` remote (`git remote -v` empty) → stop after committing and tell the user the commits are local only.
 - Remote exists → `git push -u origin <branch>`.
-- `gh pr list --head <branch> --state open` → PR exists: done, report URL. None: `gh pr create --base release/<YYYY-MM>` (the current release, never `main` or `stage`) with:
+- `gh pr list --head <branch> --state open` → PR exists: done, report URL. None: `gh pr create --base releases/<YYYY-MM>` (the current release, never `main` or `stage`) with:
   - Title: conventional, under 70 chars
   - Body: what changed, why, SRS feature IDs, test steps, screenshots for UI changes
 
@@ -49,8 +49,8 @@ If passed: push, then show branch, `git log main..HEAD --oneline`, and the PR dr
 ## Output Validation
 
 - [ ] Build gate passed
-- [ ] Not committed on `main` / `stage` / `release/*`
-- [ ] PR base is the current `release/<YYYY-MM>`
+- [ ] Not committed on `main` / `stage` / `releases/*`
+- [ ] PR base is the current `releases/<YYYY-MM>`
 - [ ] Commits split by concern
 - [ ] No secrets or build artifacts staged
 - [ ] PR URL reported (or "local only, no remote")
