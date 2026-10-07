@@ -41,7 +41,8 @@ Run the **push** command recipe, or invoke `/push` if your tool supports slash c
 - Remote exists → `git push -u origin <branch>`.
 - `gh pr list --head <branch> --state open` → PR exists: done, report URL. None: `gh pr create --base releases/<YYYY-MM>` (the current release, never `main` or `stage`) with:
   - Title: conventional, under 70 chars
-  - Body: what changed, why, SRS feature IDs, test steps, screenshots for UI changes
+  - Body: fill **every section** of `.github/pull_request_template.md` (Summary, SRS features, Changes, Why, Screenshots, Testing, Risk & Rollback). Tick `[x]` only checks you actually ran; mark checks that don't apply `n/a`; leave unrun ones `[ ]` and say why.
+- Already-open PR and the push changed its scope → update the body with `gh pr edit <n> --body-file <file>`.
 
 ### 6. `--confirm`
 If passed: push, then show branch, `git log main..HEAD --oneline`, and the PR draft. Wait for go-ahead before `gh pr create`.
