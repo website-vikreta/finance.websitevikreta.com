@@ -88,6 +88,25 @@ Recipes in `.ai/commands/` are tool-agnostic workflows. Invoke by name or slash 
 | `fix-performance` | `.ai/commands/micro/fix-performance.md` | Dashboard / chat too slow, bundle, CLS |
 | `push` | `.ai/commands/micro/push.md` | Build gate, split commits, push, PR |
 
+## Git Flow
+
+```
+feature/*  ──PR──▶  release/YYYY-MM  ──PR──▶  stage  ──PR (admin only, monthly)──▶  main = prod
+```
+
+| Branch | Role | Who merges in |
+|--------|------|---------------|
+| `main` | Production. Deployed once a month. | Admin only, from `stage` |
+| `stage` | Pre-prod testing of the month's release | Release PR from `release/*` |
+| `release/YYYY-MM` | Collects the month's work. Cut from `main` | Feature PRs, after review |
+| `<type>/<slug>` | One feature or fix. Cut from the current `release/*` | Author opens PR to `release/*` |
+
+- Developers: branch from the current `release/YYYY-MM`, open the PR **against that release branch**. Never PR into `stage` or `main`.
+- Branch names: `feat/`, `fix/`, `refactor/`, `perf/`, `chore/`, `docs/`, `style/` + kebab slug.
+- Monthly cycle: `release/YYYY-MM` → PR into `stage` → test → admin merges `stage` → `main` (prod deploy) → cut the next `release/YYYY-MM` from the new `main`.
+- Hotfix: `fix/<slug>` from `main` → PR to `main` (admin), then merge `main` back into `stage` and the open `release/*`.
+- Current release: `release/2026-10`.
+
 ## Learning Log — Consistency Memory
 
 `.ai/learning.md` is the persistent record of every reusable design + code convention.
