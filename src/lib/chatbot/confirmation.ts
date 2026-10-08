@@ -90,31 +90,32 @@ export function buildConfirmationTransaction(
 
   // ── Build the type-specific confirmation object ───────────────────────────
   if (draft.type === 'income') {
-    const transaction: ConfirmationTransaction = {
+    // client_name is required for income — throw explicitly if missing
+    if (draft.client_name === null || draft.client_name === undefined || draft.client_name === '') {
+      throw new ConfirmationBuildError('Cannot build confirmation: draft.client_name is required for income transactions.');
+    }
+    return {
       type: 'income',
       original_amount: draft.original_amount,
       original_currency: draft.original_currency,
+      client_name: draft.client_name,
       txn_date: draft.txn_date,
       exchange_rate: currency.exchange_rate,
       inr_amount: currency.inr_amount,
     };
-    if (draft.client_name) {
-      transaction.client_name = draft.client_name;
-    }
-    return transaction;
   }
 
-  // expense
-  const transaction: ConfirmationTransaction = {
+  // expense — expense_description is required for expense
+  if (draft.expense_description === null || draft.expense_description === undefined || draft.expense_description === '') {
+    throw new ConfirmationBuildError('Cannot build confirmation: draft.expense_description is required for expense transactions.');
+  }
+  return {
     type: 'expense',
     original_amount: draft.original_amount,
     original_currency: draft.original_currency,
+    expense_description: draft.expense_description,
     txn_date: draft.txn_date,
     exchange_rate: currency.exchange_rate,
     inr_amount: currency.inr_amount,
   };
-  if (draft.expense_description) {
-    transaction.expense_description = draft.expense_description;
-  }
-  return transaction;
 }

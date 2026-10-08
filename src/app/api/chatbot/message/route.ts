@@ -62,7 +62,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server-auth";
 import { extractTransaction, type ExtractionContext } from "@/lib/chatbot/extract";
 import { mergeDraft } from "@/lib/chatbot/merge";
-import { getDraft, setDraft, clearDraft, getSession, setSession, clearAll } from "@/lib/chatbot/store";
+import { getDraft, setDraft, getSession, setSession, clearAll } from "@/lib/chatbot/store";
 import { validateExtraction } from "@/lib/chatbot/validate";
 import { convertToINR, CurrencyConversionError } from "@/lib/currency/convert";
 import { buildConfirmationTransaction, ConfirmationBuildError } from "@/lib/chatbot/confirmation";
@@ -147,11 +147,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // Neither confirm nor cancel → EDIT: clear everything and re-run Phase 1→3→2 below
-    clearDraft(userId);
-    clearAll(userId);  // clears both draft and session
+    clearAll(userId);  // clears both draft and session atomically
     existing = getDraft(userId);
     session  = getSession(userId);
     // Falls through to Branch C (COLLECTING) below
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Branch B2 — CONFIRMED (guard: prevent re-entry after confirmation)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (session.status === 'CONFIRMED') {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'This transaction has already been confirmed. Use /api/chatbot/reset to start a new one.',
+      },
+      { status: 409 },
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
