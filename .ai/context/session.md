@@ -21,6 +21,7 @@
 - Deletes are soft. Every create / edit / delete writes an audit entry.
 - Automation team owns n8n/webhooks. We only emit events.
 - Internal tool: no SEO, no marketing pages, `robots: noindex`.
+- Git flow: feature → `releases/YYYY-MM` → `stage` → `main` (prod, monthly, admin-only merge). Current release `releases/2026-10`. See `AGENTS.md` → Git Flow.
 
 ## In Progress
 
