@@ -1,0 +1,199 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens: source of truth is DESIGN.md (ClickHouse system).
+ * Dark only. There is no light theme; <html> always carries `.dark`.
+ * Rules for using these tokens: .ai/standards/design-system.md
+ */
+
+@theme inline {
+  /* Fonts */
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* shadcn semantic colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* DESIGN.md colors without a shadcn equivalent */
+  --color-primary-active: var(--primary-active);
+  --color-primary-disabled: var(--primary-disabled);
+  --color-body: var(--body);
+  --color-body-strong: var(--body-strong);
+  --color-muted-soft: var(--muted-soft);
+  --color-hairline: var(--border);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-surface-soft: var(--surface-soft);
+  --color-surface-card: var(--card);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+
+  /* Radius: xs 4 / sm 6 / md 8 / lg 12 (DESIGN.md), mapped to shadcn class names */
+  --radius-sm: 4px;   /* DESIGN xs: badge accents */
+  --radius-md: 6px;   /* DESIGN sm: small inline buttons, menu items */
+  --radius-lg: 8px;   /* DESIGN md: buttons, inputs, selects */
+  --radius-xl: 12px;  /* DESIGN lg: cards, dialogs, code windows */
+  --radius-2xl: 12px;
+  --radius-3xl: 12px;
+  --radius-4xl: 9999px;
+
+  /* Type scale (DESIGN.md typography). Use as text-display-xl, text-title-md, ... */
+  --text-display-xl: 72px;
+  --text-display-xl--line-height: 1.05;
+  --text-display-xl--letter-spacing: -2.5px;
+  --text-display-xl--font-weight: 700;
+  --text-display-lg: 56px;
+  --text-display-lg--line-height: 1.1;
+  --text-display-lg--letter-spacing: -2px;
+  --text-display-lg--font-weight: 700;
+  --text-display-md: 40px;
+  --text-display-md--line-height: 1.15;
+  --text-display-md--letter-spacing: -1.5px;
+  --text-display-md--font-weight: 700;
+  --text-display-sm: 32px;
+  --text-display-sm--line-height: 1.2;
+  --text-display-sm--letter-spacing: -1px;
+  --text-display-sm--font-weight: 700;
+  --text-title-lg: 24px;
+  --text-title-lg--line-height: 1.3;
+  --text-title-lg--letter-spacing: -0.3px;
+  --text-title-lg--font-weight: 700;
+  --text-title-md: 18px;
+  --text-title-md--line-height: 1.4;
+  --text-title-md--font-weight: 600;
+  --text-title-sm: 16px;
+  --text-title-sm--line-height: 1.4;
+  --text-title-sm--font-weight: 600;
+  --text-stat: 56px;
+  --text-stat--line-height: 1;
+  --text-stat--letter-spacing: -1.5px;
+  --text-stat--font-weight: 700;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 1.55;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 1.55;
+  --text-caption: 13px;
+  --text-caption--line-height: 1.4;
+  --text-caption--font-weight: 500;
+  --text-eyebrow: 12px;
+  --text-eyebrow--line-height: 1.4;
+  --text-eyebrow--letter-spacing: 1.5px;
+  --text-eyebrow--font-weight: 600;
+  --text-code: 14px;
+  --text-code--line-height: 1.55;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Approved SaaS Design Tokens (from Screenshots & Brand Spec) */
+  --background: #F8F8F4;          /* Warm off-white canvas */
+  --foreground: #0A0A0A;          /* Near-black ink */
+  --card: #FFFFFF;                /* Pure white card */
+  --card-foreground: #0A0A0A;
+  --popover: #FFFFFF;
+  --popover-foreground: #0A0A0A;
+  --primary: #FFD600;             /* Brand yellow */
+  --primary-foreground: #0A0A0A;  /* Black text on yellow */
+  --primary-active: #E6C200;
+  --primary-disabled: #FFF3AA;
+  --secondary: #F4F4EE;
+  --secondary-foreground: #0A0A0A;
+  --muted: #F1F1EC;
+  --muted-foreground: #71717A;
+  --accent: #F4F4EE;
+  --accent-foreground: #0A0A0A;
+  --destructive: #EF4444;
+  --border: #E8E8E2;
+  --input: #E4E4DE;
+  --ring: #FFD600;
+
+  --body: #27272A;
+  --body-strong: #0A0A0A;
+  --muted-soft: #A1A1AA;
+  --hairline-strong: #D4D4D0;
+  --surface-soft: #F8F8F4;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --info: #3B82F6;
+  --income: #FFD600;
+  --expense: #CBD5E1;
+
+  /* Charts: Yellow for Income, Light Grey for Expenses */
+  --chart-1: #FFD600;
+  --chart-2: #CBD5E1;
+  --chart-3: #94A3B8;
+  --chart-4: #64748B;
+  --chart-5: #334155;
+
+  --radius: 12px;
+
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #52525B;
+  --sidebar-primary: #0A0A0A;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F4F4EE;
+  --sidebar-accent-foreground: #0A0A0A;
+  --sidebar-border: #E8E8E2;
+  --sidebar-ring: #FFD600;
+}
+
+.bg-dot-pattern {
+  background-image: radial-gradient(#d4d4cb 1.2px, transparent 1.2px);
+  background-size: 14px 14px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-body;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

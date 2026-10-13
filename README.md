@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Finance Tool
 
-## Getting Started
+Internal finance tracker for Website Vikreta managers. The Next.js application lives in the `@finance/web` npm workspace at `apps/web`.
 
-First, run the development server:
+## Requirements
 
-```bash
+- Node.js and npm compatible with the checked-in `package-lock.json`
+- A local environment file at `apps/web/.env.local`; use `apps/web/.env.example` as the non-secret template
+
+## Commands
+
+Run all commands from the repository root:
+
+```powershell
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run start
+npm run lint
+npm run typecheck
+npm run test
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`npm run dev` starts the web app on `http://localhost:3030`. The test command runs the existing offline chatbot regression, phase, API-flow, and integration suites. The live Gemini probe remains opt-in and is not part of the standard test command.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Workspace layout
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```text
+apps/web/       Next.js application, UI, API route handlers, tests, and environment template
+packages/       Reserved for future genuine shared packages
+```
 
-## Learn More
+There is one lockfile at the repository root. Install dependencies from the root; do not create per-workspace lockfiles.
 
-To learn more about Next.js, take a look at the following resources:
+## Deployment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+No deployment or CI configuration is present in this repository. If a platform is configured externally, set its application root directory to `apps/web` and provide the existing environment variables there. No production settings were changed by this migration.
