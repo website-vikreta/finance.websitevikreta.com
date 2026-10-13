@@ -81,11 +81,41 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 
 ## Money & Data
 
-### [Money] — integer minor units + one formatter
-- Rule: Amounts stored and summed as integer paise/cents. Display only through `src/lib/money.ts` (`Intl.NumberFormat("en-IN", { currency: "INR" })`). Always `tabular-nums`, right-aligned in tables.
-- Where: `src/lib/money.ts` (`formatMoney(minor, "INR" | "USD")`)
-- Why: SRS F9 "money stored as exact values".
-- Date: 2026-10-07
+### [Data] - Gemini extraction has a bounded, safe fallback
+- Rule: Chatbot Gemini calls set `config.httpOptions.timeout` to 4,500 ms. Provider failures return `"Chat extraction is unavailable. Please try your message again."` and never expose provider errors to the client. Gemini-backed routes preserve the retryable `503` status.
+- Where: `src/lib/chatbot/extract.ts`
+- Why: keeps chat within its 5-second response budget and prevents third-party implementation details from reaching managers.
+- Date: 2026-10-08
+
+### [Money] — Exact Major Units NUMERIC(18,2) Storage & Direct Mapping
+- Rule: Amounts are stored in PostgreSQL as exact human-readable major units using NUMERIC(18,2): original_amount and amount_inr (e.g. ₹500 is stored as 500.00, ₹40 as 40.00, $500 at 88.50 as 500.00 and 44250.00). No _minor paise/cents columns. Financial calculations internally use exact arithmetic and half-even rounding (precision.ts) and format to decimal strings with up to 2 decimal places. Returned rows map directly into human-readable numbers without double-dividing by 100.
+- Where: src/lib/db/schema.ts, src/lib/transactions/persist.ts, src/lib/currency/precision.ts, drizzle/0001_major_unit_amounts.sql
+- Why: User requirement for human-readable major-unit database storage while preserving exact financial arithmetic.
+- Date: 2026-10-12
+
+### [Data] — Explicit Confirmation PostgreSQL Persistence & Atomicity
+- Rule: Transactions are persisted ONLY upon explicit manager confirmation (`POST /api/chatbot/confirm` or conversational `confirm`). Pre-confirmation actions (extraction, clarifications, editing, cancellation) are strictly database-write-free. Transaction insert, client resolution/creation (for income), and immutable audit event run inside a single PostgreSQL transaction. Idempotency enforced via stable key and canonical payload SHA-256 hash. Banker's Rounding (Half-Even) and exact BigInt minor units via `precision.ts`.
+- Where: `src/lib/transactions/persist.ts`, `src/lib/chatbot/persist.ts`, `src/app/api/chatbot/confirm/route.ts`, `src/app/api/chatbot/message/route.ts`
+- Why: Guarantees zero phantom writes, zero silent mutations, exact integer arithmetic, and robust duplicate protection.
+- Date: 2026-10-12
+
+### [Layout] - login uses a split form and context panel
+- Rule: Keep the `/login` form in a `max-w-md` left column; show the supporting finance panel only at `lg` and above so small screens stay focused on sign-in.
+- Where: `src/app/login/page.tsx`
+- Why: It preserves the Figma desktop composition without adding non-essential content to the mobile sign-in flow.
+- Date: 2026-10-10
+
+### [Layout] - dashboard adapts before the assistant docks
+- Rule: Dashboard KPI cards move from one to two to four columns only when their content has room; the chart and payment panels stack until the `2xl` layout, and Finance AI overlays below `xl`.
+- Where: `src/app/dashboard/page.tsx`, `src/components/layout/app-shell.tsx`, `src/components/chat/finance-ai-drawer.tsx`
+- Why: Prevents the narrow dashboard and chart overlap shown when the assistant drawer is open.
+- Date: 2026-10-10
+
+### [Layout] - chat session is root-scoped and the message pane owns scrolling
+- Rule: Keep in-session Finance Chat Bot state in `ChatSessionProvider` beneath the root layout, not in per-page `AppShell` instances. Use `h-dvh` plus `min-h-0` on shell and drawer flex ancestors, and `overflow-y-auto` only on the message list.
+- Where: `src/app/layout.tsx`, `src/components/chat/chat-session-provider.tsx`, `src/components/layout/app-shell.tsx`, `src/components/chat/chat-message-list.tsx`
+- Why: App Router page navigation remounts each shell; a root-scoped provider preserves the active conversation while the bounded message pane prevents dashboard scrolling and keeps the input reachable.
+- Date: 2026-10-10
 
 ## Rejected
 

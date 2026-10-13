@@ -1,0 +1,31 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": 1,
+      "label": "Double-clear in EDIT path",
+      "description": "route.ts calls clearDraft(userId) on line 150 immediately before clearAll(userId) on line 151. clearAll already calls clearDraft internally, making the first call a redundant no-op. Remove the standalone clearDraft call and keep only clearAll.",
+      "severity": "minor",
+      "confirmed": true,
+      "file": "src/app/api/chatbot/message/route.ts",
+      "lines": "150-151"
+    },
+    {
+      "id": 2,
+      "label": "No CONFIRMED-state guard in route handler",
+      "description": "After CONFIRM succeeds, setSession marks the session CONFIRMED but the draft is never cleared. Neither Branch A nor Branch B handles the CONFIRMED status, so the next message from the same manager falls into Branch C (COLLECTING), loads the confirmed draft, and silently re-runs Gemini extraction against it. Add a branch that returns a 'transaction already confirmed — use /reset to start a new one' response when session.status === 'CONFIRMED'.",
+      "severity": "blocking",
+      "confirmed": true,
+      "file": "src/app/api/chatbot/message/route.ts"
+    },
+    {
+      "id": 3,
+      "label": "Silent omission of client_name in income confirmation",
+      "description": "buildConfirmationTransaction uses a falsy `if (draft.client_name)` guard for the income-type client_name field instead of an explicit null/undefined/empty check that throws ConfirmationBuildError. This is inconsistent with the base-field guards (type, original_amount, original_currency, txn_date) that all throw explicitly. An income confirmation can silently reach Phase 6 without a client name. Either throw ConfirmationBuildError when client_name is missing for income, or document why silent omission is acceptable.",
+      "severity": "blocking",
+      "confirmed": true,
+      "file": "src/lib/chatbot/confirmation.ts"
+    }
+  ],
+  "reviewDoc": "d:\\Pranav_Work_Space\\Repo\\finance.websitevikreta.com\\.agents\\tasks\\phase4-phase5-review.md"
+}
