@@ -30,7 +30,7 @@ export const appUsers = pgTable(
   (table) => [
     index("idx_app_users_role").on(table.role),
   ],
-);
+).enableRLS();
 
 // ─── 2. CLIENTS (Income Counterparty Records) ───────────────────────────────
 export const clients = pgTable(
@@ -50,7 +50,7 @@ export const clients = pgTable(
     index("idx_clients_deleted_at").on(table.deletedAt),
     check("chk_client_name_not_empty", sql`trim(${table.clientName}) <> ''`),
   ],
-);
+).enableRLS();
 
 // ─── 3. TRANSACTION TYPES (Lookup: 1 = income, 2 = expense) ──────────────────
 export const transactionTypes = pgTable(
@@ -62,7 +62,7 @@ export const transactionTypes = pgTable(
     description: text("description"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-);
+).enableRLS();
 
 // ─── 4. TRANSACTIONS (Confirmed Financial Records) ───────────────────────────
 export const transactions = pgTable(
@@ -149,7 +149,7 @@ export const transactions = pgTable(
       `,
     ),
   ],
-);
+).enableRLS();
 
 // ─── 5. AUDIT EVENTS (Append-Only Audit Log) ─────────────────────────────────
 export const auditEvents = pgTable(
@@ -173,4 +173,4 @@ export const auditEvents = pgTable(
     index("idx_audit_events_created_at").on(table.createdAt),
     index("idx_audit_events_performer").on(table.performedBy),
   ],
-);
+).enableRLS();
