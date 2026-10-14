@@ -13,7 +13,8 @@ interface ChatSessionContextValue {
   scrollTop: number;
   loadInitialState: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
-  confirmAction: (action: "CONFIRM" | "CANCEL" | "EDIT") => Promise<void>;
+  confirmAction: (action: "CONFIRM" | "CANCEL" | "EDIT", messageId?: string) => Promise<void>;
+  handleCancelledAction: () => void;
   resetConversation: () => Promise<void>;
   setScrollTop: (position: number) => void;
 }
@@ -44,6 +45,15 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
   const appendMessage = useCallback((message: ChatMessage) => {
     setMessages((previous) => [...previous, message]);
   }, []);
+
+  const handleCancelledAction = useCallback(() => {
+    appendMessage({
+      id: `assistant-cancelled-warn-${Date.now()}`,
+      role: "assistant",
+      content: "This transaction has already been cancelled. Please continue with a new transaction.",
+      timestamp: formatTime(),
+    });
+  }, [appendMessage]);
 
   const loadInitialState = useCallback(async () => {
     setWelcomeTimestamp((current) => current ?? formatTime());
@@ -91,8 +101,23 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
       if (data.draft) setCurrentDraft(data.draft);
 
       if (data.status === "CONFIRMED" && data.transaction) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("finance:transaction-confirmed", { detail: data.transaction }));
+        }
         appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: "Transaction confirmed. The transaction is ready for Phase 6 database persistence.", timestamp: formatTime(), status: "CONFIRMED", confirmedTransaction: data.transaction });
       } else if (data.status === "CANCELLED") {
+        setCurrentDraft(null);
+        setMessages((previous) =>
+          previous.map((msg) =>
+            msg.confirmation
+              ? {
+                  ...msg,
+                  isCancelled: true,
+                  confirmation: { ...msg.confirmation, isCancelled: true },
+                }
+              : msg
+          )
+        );
         appendMessage({ id: `assistant-cancelled-${Date.now()}`, role: "assistant", content: data.message || "Transaction discarded. Start a new message to record another.", timestamp: formatTime(), status: "CANCELLED" });
       } else if (data.status === "READY_FOR_CONFIRMATION" && data.confirmation) {
         const confirmMsg = data.question || "All required transaction details have been provided. Please review the summary below and confirm:";
@@ -111,8 +136,16 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [appendMessage]);
 
-  const confirmAction = useCallback(async (action: "CONFIRM" | "CANCEL" | "EDIT") => {
+  const confirmAction = useCallback(async (action: "CONFIRM" | "CANCEL" | "EDIT", messageId?: string) => {
     if (isRequestInFlightRef.current) return;
+
+    if (messageId) {
+      const targetMsg = messages.find((m) => m.id === messageId);
+      if (targetMsg?.isCancelled || targetMsg?.confirmation?.isCancelled) {
+        handleCancelledAction();
+        return;
+      }
+    }
 
     isRequestInFlightRef.current = true;
     stateRevisionRef.current += 1;
@@ -135,9 +168,23 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
 
       setStatus(data.status);
       if (action === "CONFIRM" && data.transaction) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("finance:transaction-confirmed", { detail: data.transaction }));
+        }
         appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: "Transaction confirmed. The transaction is ready for Phase 6 database persistence.", timestamp: formatTime(), status: "CONFIRMED", confirmedTransaction: data.transaction });
       } else if (action === "CANCEL") {
         setCurrentDraft(null);
+        setMessages((previous) =>
+          previous.map((msg) =>
+            msg.confirmation
+              ? {
+                  ...msg,
+                  isCancelled: true,
+                  confirmation: { ...msg.confirmation, isCancelled: true },
+                }
+              : msg
+          )
+        );
         appendMessage({ id: `assistant-cancelled-${Date.now()}`, role: "assistant", content: data.message || "Transaction discarded. Start a new message to record another.", timestamp: formatTime(), status: "CANCELLED" });
       } else if (action === "EDIT") {
         if (data.draft) setCurrentDraft(data.draft);
@@ -147,7 +194,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
       setIsPendingAction(false);
       isRequestInFlightRef.current = false;
     }
-  }, [appendMessage]);
+  }, [appendMessage, handleCancelledAction, messages]);
 
   const resetConversation = useCallback(async () => {
     if (isRequestInFlightRef.current) return;
@@ -171,7 +218,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  return <ChatSessionContext.Provider value={{ messages, status, isLoading, isPendingAction, welcomeTimestamp, scrollTop, loadInitialState, sendMessage, confirmAction, resetConversation, setScrollTop }}>{children}</ChatSessionContext.Provider>;
+  return <ChatSessionContext.Provider value={{ messages, status, isLoading, isPendingAction, welcomeTimestamp, scrollTop, loadInitialState, sendMessage, confirmAction, handleCancelledAction, resetConversation, setScrollTop }}>{children}</ChatSessionContext.Provider>;
 }
 
 export function useChatSession(): ChatSessionContextValue {

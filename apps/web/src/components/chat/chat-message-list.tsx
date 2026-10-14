@@ -13,9 +13,10 @@ interface ChatMessageListProps {
   welcomeTimestamp: string | null;
   initialScrollTop: number;
   onScrollPositionChange: (position: number) => void;
-  onConfirm: () => void;
-  onEdit: () => void;
-  onCancel: () => void;
+  onConfirm: (messageId?: string) => void;
+  onEdit: (messageId?: string) => void;
+  onCancel: (messageId?: string) => void;
+  onCancelledAction?: () => void;
   onRetry?: (messageText: string) => void;
   onQuickAction: (actionText: string) => void;
 }
@@ -30,6 +31,7 @@ export function ChatMessageList({
   onConfirm,
   onEdit,
   onCancel,
+  onCancelledAction,
   onRetry,
   onQuickAction,
 }: ChatMessageListProps) {
@@ -173,10 +175,23 @@ export function ChatMessageList({
                     {message.confirmation?.transaction && (
                       <TransactionSummaryCard
                         transaction={message.confirmation.transaction}
+                        isCancelled={Boolean(message.isCancelled || message.confirmation.isCancelled)}
                         isPendingAction={isPendingAction}
-                        onConfirm={onConfirm}
-                        onEdit={onEdit}
-                        onCancel={onCancel}
+                        onConfirm={() => {
+                          if (message.isCancelled || message.confirmation?.isCancelled) {
+                            onCancelledAction?.();
+                          } else {
+                            onConfirm(message.id);
+                          }
+                        }}
+                        onEdit={() => {
+                          if (message.isCancelled || message.confirmation?.isCancelled) {
+                            onCancelledAction?.();
+                          } else {
+                            onEdit(message.id);
+                          }
+                        }}
+                        onCancel={() => onCancel(message.id)}
                       />
                     )}
 

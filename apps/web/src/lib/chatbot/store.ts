@@ -48,6 +48,14 @@ export function getDraft(userId: string): ExtractionResult {
  */
 export function setDraft(userId: string, draft: ExtractionResult): void {
   store.set(userId, draft);
+  if (
+    draft.type !== null ||
+    draft.original_amount !== null ||
+    draft.expense_description !== null ||
+    draft.client_name !== null
+  ) {
+    clearUserCancelled(userId);
+  }
 }
 
 /**
@@ -128,4 +136,29 @@ export function clearSession(userId: string): void {
 export function clearAll(userId: string): void {
   clearDraft(userId);
   clearSession(userId);
+}
+
+// ─── Cancelled transactions tracking ──────────────────────────────────────────
+
+const cancelledTransactions = new Set<string>();
+const cancelledUsers = new Set<string>();
+
+export function markTransactionCancelled(keyOrId: string): void {
+  if (keyOrId) cancelledTransactions.add(keyOrId);
+}
+
+export function isTransactionCancelled(keyOrId: string): boolean {
+  return keyOrId ? cancelledTransactions.has(keyOrId) : false;
+}
+
+export function markUserCancelled(userId: string): void {
+  cancelledUsers.add(userId);
+}
+
+export function isUserCancelled(userId: string): boolean {
+  return cancelledUsers.has(userId);
+}
+
+export function clearUserCancelled(userId: string): void {
+  cancelledUsers.delete(userId);
 }

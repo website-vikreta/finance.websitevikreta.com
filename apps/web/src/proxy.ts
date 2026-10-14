@@ -38,6 +38,11 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
 
   // If visiting /login:
   if (pathname === "/login") {
+    if (req.nextUrl.searchParams.has("fresh") || req.nextUrl.searchParams.has("logout")) {
+      const res = NextResponse.next();
+      res.cookies.delete(SESSION_COOKIE);
+      return res;
+    }
     if (session) {
       // Already logged in -> redirect to /dashboard
       const url = req.nextUrl.clone();

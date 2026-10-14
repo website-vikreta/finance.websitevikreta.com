@@ -32,9 +32,9 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server-auth";
-import { extractTransaction, type ExtractionContext } from "@/lib/chatbot/extract";
+import { extractTransaction, detectContradictions, extractExplicitExchangeRate, type ExtractionContext } from "@/lib/chatbot/extract";
 import { mergeDraft } from "@/lib/chatbot/merge";
-import { getDraft, setDraft, getSession, setSession, clearAll } from "@/lib/chatbot/store";
+import { getDraft, setDraft, getSession, setSession, clearAll, markTransactionCancelled, markUserCancelled, clearUserCancelled, isUserCancelled } from "@/lib/chatbot/store";
 import { validateExtraction } from "@/lib/chatbot/validate";
 import { parseExchangeRate, buildConfirmation } from "@/lib/chatbot/confirm";
 import { confirmAndPersistTransaction } from "@/lib/transactions/persist";
@@ -209,9 +209,78 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const rate = parseExchangeRate(message);
+    const contradiction = detectContradictions(message);
+    if (contradiction?.field === "original_amount" || contradiction?.field === "exchange_rate") {
+      return NextResponse.json(
+        {
+          ok: true,
+          status: "AWAITING_EXCHANGE_RATE",
+          draft: getDraft(userId),
+          question: "Could you clarify which exchange rate is correct?",
+        },
+        { status: 200 },
+      );
+    }
 
-    if (rate === null) {
+    const explicitRate = extractExplicitExchangeRate(message);
+    const parsedNumberRate = parseExchangeRate(message);
+    const candidateRate = explicitRate ?? parsedNumberRate;
+
+    const hasTransactionIntent = /\b(inr|₹|rupees?|bought|spent|paid\s+for|received|income|expense|client|vendor|change|update|actually|yesterday|today|setup|office)\b/i.test(message);
+
+    if (!hasTransactionIntent && candidateRate !== null) {
+      // Pure rate response
+      const draft = getDraft(userId);
+      draft.exchange_rate = candidateRate;
+      setDraft(userId, draft);
+
+      const result = buildConfirmation(draft, candidateRate);
+
+      if (!result.ok) {
+        return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+      }
+
+      setSession(userId, {
+        status: "READY_FOR_CONFIRMATION",
+        idempotencyKey: session.idempotencyKey || `chat-${userId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+        currency: {
+          original_amount: draft.original_amount as number,
+          original_currency: "USD",
+          exchange_rate: candidateRate,
+          inr_amount: result.transaction.inr_amount,
+          exchange_rate_date: today,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          status: "READY_FOR_CONFIRMATION",
+          draft,
+          confirmation: {
+            required: true,
+            transaction: result.transaction,
+          },
+          currency: {
+            exchange_rate: candidateRate,
+            inr_amount: result.transaction.inr_amount,
+          },
+        },
+        { status: 200 },
+      );
+    }
+
+    // If message is not a pure exchange rate or has transaction intent,
+    // revert to COLLECTING so it can be extracted and merged flexibly
+    if (hasTransactionIntent) {
+      setSession(userId, { status: "COLLECTING" });
+      if (candidateRate !== null) {
+        const curDraft = getDraft(userId);
+        curDraft.exchange_rate = candidateRate;
+        setDraft(userId, curDraft);
+      }
+      // Fall through to the COLLECTING flow below with existing draft intact.
+    } else {
       return NextResponse.json(
         {
           ok: true,
@@ -223,49 +292,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 200 },
       );
     }
-
-    // Rate is valid — build confirmation
-    const draft = getDraft(userId);
-    const result = buildConfirmation(draft, rate);
-
-    if (!result.ok) {
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
-    }
-
-    setSession(userId, {
-      status: "READY_FOR_CONFIRMATION",
-      idempotencyKey: session.idempotencyKey || `chat-${userId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
-      currency: {
-        original_amount: draft.original_amount as number,
-        original_currency: "USD",
-        exchange_rate: rate,
-        inr_amount: result.transaction.inr_amount,
-        exchange_rate_date: today,
-      },
-    });
-
-    return NextResponse.json(
-      {
-        ok: true,
-        status: "READY_FOR_CONFIRMATION",
-        draft,
-        confirmation: {
-          required: true,
-          transaction: result.transaction,
-        },
-        currency: {
-          exchange_rate: rate,
-          inr_amount: result.transaction.inr_amount,
-        },
-      },
-      { status: 200 },
-    );
   }
 
   // =========================================================================
-  // CONFIRMED — previous transaction was confirmed; clear state to start fresh
+  // CONFIRMED / CANCELLED — clear old state to start fresh
   // =========================================================================
-  if (session.status === "CONFIRMED") {
+  if (session.status === "CONFIRMED" || session.status === "CANCELLED" || isUserCancelled(userId)) {
+    clearUserCancelled(userId);
     clearAll(userId);
   }
 
@@ -300,6 +333,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 200 },
       );
     } else if (lower === "cancel") {
+      if (session.idempotencyKey) {
+        markTransactionCancelled(session.idempotencyKey);
+      }
+      markUserCancelled(userId);
       clearAll(userId);
 
       return NextResponse.json(
@@ -539,12 +576,38 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const extraction = extractResult.data;
 
+  // Check for contradiction in the manager's message
+  const contradiction = detectContradictions(message);
+  if (contradiction) {
+    extraction[contradiction.field] = null;
+  }
+
   // Phase 3 — merge + store
   const draft = mergeDraft(existing, extraction);
   setDraft(userId, draft);
 
   // Phase 2 — validate merged draft
   const validation = validateExtraction(draft);
+
+  // If contradiction occurred, ask focused clarification instead of guessing
+  if (contradiction) {
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "COLLECTING",
+        extraction,
+        draft,
+        validation: {
+          ...validation,
+          complete: false,
+          missingField: contradiction.field,
+          question: contradiction.question,
+        },
+        question: contradiction.question,
+      },
+      { status: 200 },
+    );
+  }
 
   // Still collecting fields — return next question
   if (!validation.complete) {
@@ -604,7 +667,53 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // USD path — ask manager for exchange rate
+  // USD path — check if manager ALREADY explicitly supplied an exchange rate!
+  const existingRate =
+    draft.exchange_rate ??
+    extractExplicitExchangeRate(message) ??
+    session.currency?.exchange_rate ??
+    null;
+
+  if (existingRate !== null && Number.isFinite(existingRate) && existingRate > 0) {
+    const result = buildConfirmation(draft, existingRate);
+
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+
+    setSession(userId, {
+      status: "READY_FOR_CONFIRMATION",
+      idempotencyKey: session.idempotencyKey || `chat-${userId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+      currency: {
+        original_amount: draft.original_amount as number,
+        original_currency: "USD",
+        exchange_rate: existingRate,
+        inr_amount: result.transaction.inr_amount,
+        exchange_rate_date: today,
+      },
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "READY_FOR_CONFIRMATION",
+        extraction,
+        draft,
+        validation,
+        confirmation: {
+          required: true,
+          transaction: result.transaction,
+        },
+        currency: {
+          exchange_rate: existingRate,
+          inr_amount: result.transaction.inr_amount,
+        },
+      },
+      { status: 200 },
+    );
+  }
+
+  // USD path without rate — ask manager for exchange rate
   setSession(userId, { status: "AWAITING_EXCHANGE_RATE" });
 
   return NextResponse.json(

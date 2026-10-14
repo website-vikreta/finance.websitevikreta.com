@@ -15,7 +15,7 @@
  *   - access the database
  */
 
-import type { ExtractionResult } from "./extract";
+import { type ExtractionResult, normalizeClientName, normalizeExpenseDescription } from "./extract";
 
 /** An empty draft — the starting state for every new conversation. */
 export const EMPTY_DRAFT: ExtractionResult = {
@@ -25,6 +25,7 @@ export const EMPTY_DRAFT: ExtractionResult = {
   client_name: null,
   expense_description: null,
   txn_date: null,
+  exchange_rate: null,
 };
 
 /**
@@ -41,12 +42,23 @@ export function mergeDraft(
   existing: ExtractionResult,
   incoming: ExtractionResult,
 ): ExtractionResult {
+  const mergedClient =
+    incoming.client_name !== undefined && incoming.client_name !== null
+      ? normalizeClientName(incoming.client_name)
+      : normalizeClientName(existing.client_name);
+
+  const mergedExpenseDesc =
+    incoming.expense_description !== undefined && incoming.expense_description !== null
+      ? normalizeExpenseDescription(incoming.expense_description)
+      : normalizeExpenseDescription(existing.expense_description);
+
   return {
     type: incoming.type ?? existing.type,
     original_amount: incoming.original_amount ?? existing.original_amount,
     original_currency: incoming.original_currency ?? existing.original_currency,
-    client_name: incoming.client_name ?? existing.client_name,
-    expense_description: incoming.expense_description ?? existing.expense_description,
+    client_name: mergedClient,
+    expense_description: mergedExpenseDesc,
     txn_date: incoming.txn_date ?? existing.txn_date,
+    exchange_rate: incoming.exchange_rate ?? existing.exchange_rate ?? null,
   };
 }

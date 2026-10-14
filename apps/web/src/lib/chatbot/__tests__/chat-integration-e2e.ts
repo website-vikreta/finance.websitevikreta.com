@@ -378,6 +378,228 @@ async function runAllTests() {
     assert("No premature validation error triggered", greetingJson.ok === true);
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  section("Scenario 12: Clean Client Name Extraction ('From the Reliance' → 'Reliance')");
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    clearAll(userId);
+    // 1. Seed partial income draft missing client
+    setDraft(userId, {
+      type: "income",
+      original_amount: 50000,
+      original_currency: "INR",
+      client_name: null,
+      expense_description: null,
+      txn_date: "2026-10-13",
+    });
+
+    // 2. Manager sends "From the Reliance"
+    const req = new NextRequest("http://localhost:3000/api/chatbot/message", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ message: "From the Reliance" }),
+    });
+    const res = await postMessageHandler(req);
+    const json = await res.json();
+
+    assert("POST returns 200", res.status === 200);
+    assert("Client name normalized in draft to 'Reliance'", json.draft?.client_name === "Reliance");
+    assert("Draft status advanced to READY_FOR_CONFIRMATION", json.status === "READY_FOR_CONFIRMATION");
+    assert("Review card displays clean client name 'Reliance'", json.confirmation?.transaction?.client_name === "Reliance");
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  section("Scenario 13: Multi-Field Message ('I bought a new laptop for $60 today')");
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    clearAll(userId);
+    // Manager sends full details in one message
+    const req = new NextRequest("http://localhost:3000/api/chatbot/message", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ message: "I bought a new laptop for $60 today" }),
+    });
+    const res = await postMessageHandler(req);
+    const json = await res.json();
+
+    assert("Multi-field message returns 200", res.status === 200);
+    assert("Amount extracted as 60", json.draft?.original_amount === 60);
+    assert("Currency extracted as USD", json.draft?.original_currency === "USD");
+    assert("Type extracted as expense", json.draft?.type === "expense");
+    assert("Description extracted as 'New laptop'", json.draft?.expense_description === "New laptop");
+    assert("Date extracted as today", json.draft?.txn_date !== null);
+    assert("Advances to AWAITING_EXCHANGE_RATE directly", json.status === "AWAITING_EXCHANGE_RATE");
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  section("Scenario 14: Contradictory Information Triggers Clarification");
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    clearAll(userId);
+    // Manager provides contradictory amounts "$50 or $60"
+    const req = new NextRequest("http://localhost:3000/api/chatbot/message", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ message: "I bought a laptop for $50 or $60 today" }),
+    });
+    const res = await postMessageHandler(req);
+    const json = await res.json();
+
+    assert("Contradictory message returns 200", res.status === 200);
+    assert("Status remains COLLECTING", json.status === "COLLECTING");
+    assert("Validation complete is false", json.validation?.complete === false);
+    assert("Missing field is original_amount", json.validation?.missingField === "original_amount");
+    assert("Clarification question asked", json.question === "Could you clarify which payment amount is correct?");
+    assert("Ambiguous amount not guessed in draft", json.draft?.original_amount === null);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  section("Scenario 15: Cancellation Behavior — Old Review Box Cannot Be Confirmed or Edited");
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    clearAll(userId);
+    const txnKey = `txn-test-cancel-${Date.now()}`;
+    // Seed draft and session in READY_FOR_CONFIRMATION
+    setDraft(userId, {
+      type: "expense",
+      original_amount: 500,
+      original_currency: "INR",
+      client_name: null,
+      expense_description: "Team lunch",
+      txn_date: "2026-10-14",
+    });
+    setSession(userId, {
+      status: "READY_FOR_CONFIRMATION",
+      idempotencyKey: txnKey,
+      currency: {
+        original_amount: 500,
+        original_currency: "INR",
+        exchange_rate: null,
+        inr_amount: 500,
+        exchange_rate_date: "2026-10-14",
+      },
+    });
+
+    // 1. User cancels transaction from review box
+    const cancelReq = new NextRequest("http://localhost:3000/api/chatbot/confirm", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ action: "CANCEL", idempotencyKey: txnKey }),
+    });
+    const cancelRes = await confirmHandler(cancelReq);
+    const cancelJson = await cancelRes.json();
+    assert("CANCEL returns 200", cancelRes.status === 200);
+    assert("Status is CANCELLED", cancelJson.status === "CANCELLED");
+
+    // 2. User clicks Confirm on that cancelled review box
+    const confirmReq = new NextRequest("http://localhost:3000/api/chatbot/confirm", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ action: "CONFIRM", idempotencyKey: txnKey }),
+    });
+    const confirmRes = await confirmHandler(confirmReq);
+    const confirmJson = await confirmRes.json();
+    assert("Clicking Confirm on cancelled txn returns 400", confirmRes.status === 400);
+    assert(
+      "Shows friendly cancelled message on Confirm",
+      confirmJson.error === "This transaction has already been cancelled. Please continue with a new transaction."
+    );
+
+    // 3. User clicks Edit on that cancelled review box
+    const editReq = new NextRequest("http://localhost:3000/api/chatbot/confirm", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ action: "EDIT", idempotencyKey: txnKey }),
+    });
+    const editRes = await confirmHandler(editReq);
+    const editJson = await editRes.json();
+    assert("Clicking Edit on cancelled txn returns 400", editRes.status === 400);
+    assert(
+      "Shows friendly cancelled message on Edit",
+      editJson.error === "This transaction has already been cancelled. Please continue with a new transaction."
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  section("Scenario 16: Start and Complete a New Transaction After Cancellation");
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    // User sends a completely new transaction message after cancellation
+    const newTxnReq = new NextRequest("http://localhost:3000/api/chatbot/message", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ message: "Paid ₹12,000 for office internet today" }),
+    });
+    const newTxnRes = await postMessageHandler(newTxnReq);
+    const newTxnJson = await newTxnRes.json();
+
+    assert("New transaction message returns 200", newTxnRes.status === 200);
+    assert("Advances to READY_FOR_CONFIRMATION", newTxnJson.status === "READY_FOR_CONFIRMATION");
+    assert("Amount is 12000", newTxnJson.draft?.original_amount === 12000);
+    assert("Currency is INR", newTxnJson.draft?.original_currency === "INR");
+    assert("Description is 'Office internet'", newTxnJson.draft?.expense_description === "Office internet");
+
+    // Manager confirms the new transaction
+    const confirmReq = new NextRequest("http://localhost:3000/api/chatbot/confirm", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ action: "CONFIRM" }),
+    });
+    const confirmRes = await confirmHandler(confirmReq);
+    const confirmJson = await confirmRes.json();
+    assert("New transaction confirms with 200", confirmRes.status === 200);
+    assert("Status is CONFIRMED", confirmJson.status === "CONFIRMED");
+    assert("Confirmed amount is 12000", confirmJson.transaction?.inr_amount === 12000);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  section("Scenario 17: Date, Expense Description, and Exchange Rate in One Message");
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    clearAll(userId);
+    const multiMsg = "Payment date is today, the exchange rate is 80 per dollar, and the expense is for buying the new PC setup in the office.";
+    const req = new NextRequest("http://localhost:3000/api/chatbot/message", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ message: multiMsg }),
+    });
+    const res = await postMessageHandler(req);
+    const json = await res.json();
+
+    assert("Multi-detail message returns 200", res.status === 200);
+    assert("Status is COLLECTING (waiting for missing amount)", json.status === "COLLECTING");
+    assert("Type extracted as expense", json.draft?.type === "expense");
+    assert("Date extracted as today", json.draft?.txn_date !== null);
+    assert("Exchange rate extracted as 80", json.draft?.exchange_rate === 80);
+    assert("Description normalized to 'New PC setup for the office'", json.draft?.expense_description === "New PC setup for the office");
+    assert("Amount is null (never guessed)", json.draft?.original_amount === null);
+    assert("Currency is null (never guessed)", json.draft?.original_currency === null);
+    assert("Missing field is original_amount", json.validation?.missingField === "original_amount");
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  section("Scenario 18: Multi-Field While Asking for Another Field + Explicit Rate Not Re-Requested");
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    // The chatbot is currently asking for amount. User provides amount AND currency.
+    const followUpReq = new NextRequest("http://localhost:3000/api/chatbot/message", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ message: "$1,200" }),
+    });
+    const followUpRes = await postMessageHandler(followUpReq);
+    const followUpJson = await followUpRes.json();
+
+    assert("Follow-up amount returns 200", followUpRes.status === 200);
+    assert("Amount merged as 1200", followUpJson.draft?.original_amount === 1200);
+    assert("Currency merged as USD", followUpJson.draft?.original_currency === "USD");
+    assert("Preserves expense description", followUpJson.draft?.expense_description === "New PC setup for the office");
+    assert("Explicit exchange rate recognized — NOT re-requested", followUpJson.status === "READY_FOR_CONFIRMATION");
+    assert("Direct confirmation card generated", followUpJson.confirmation?.required === true);
+    assert("Applied exchange rate is 80", followUpJson.confirmation?.transaction?.exchange_rate === 80);
+    assert("Calculated INR amount is 1200 * 80 = 96000", followUpJson.confirmation?.transaction?.inr_amount === 96000);
+  }
+
   console.log(`\n────────────────────────────────────────────────────────────`);
   console.log(`E2E Integration Test Suite: ${passed} passed, ${failed} failed`);
   console.log(`────────────────────────────────────────────────────────────\n`);

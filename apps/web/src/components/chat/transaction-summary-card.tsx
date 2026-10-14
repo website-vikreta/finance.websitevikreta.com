@@ -83,7 +83,7 @@ export function TransactionSummaryCard({
           ) : isCancelled ? (
             <span className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
               <XCircle className="size-4" aria-hidden />
-              <span>Discarded</span>
+              <span>Cancelled</span>
             </span>
           ) : (
             <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-caption font-medium text-primary">
@@ -190,9 +190,35 @@ export function TransactionSummaryCard({
             Transaction confirmed. Ready for Phase 6 database persistence.
           </p>
         ) : (
-          <p className="text-caption text-muted-foreground">
-            Transaction discarded. You can type a new transaction at any time.
-          </p>
+          <div className="space-y-2.5">
+            <p className="text-caption text-muted-foreground">
+              This transaction has already been cancelled.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isPendingAction}
+                onClick={onConfirm}
+                className="flex-1 font-semibold text-muted-foreground hover:text-foreground"
+              >
+                <Check className="size-3.5" aria-hidden />
+                Confirm Transaction
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isPendingAction}
+                onClick={onEdit}
+                className="gap-1.5 text-muted-foreground hover:text-foreground"
+              >
+                <Edit2 className="size-3.5" aria-hidden />
+                Edit
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -21,8 +21,10 @@ export interface ChatMessage {
   confirmation?: {
     required: boolean;
     transaction: ConfirmationTransaction;
+    isCancelled?: boolean;
   };
   confirmedTransaction?: ConfirmationTransaction;
+  isCancelled?: boolean;
   isRatePrompt?: boolean;
   isError?: boolean;
   errorMessage?: string;

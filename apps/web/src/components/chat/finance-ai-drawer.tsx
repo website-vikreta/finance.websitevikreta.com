@@ -26,6 +26,7 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
     loadInitialState,
     sendMessage,
     confirmAction,
+    handleCancelledAction,
     resetConversation,
     setScrollTop,
   } = useChatSession();
@@ -110,9 +111,10 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
             welcomeTimestamp={welcomeTimestamp}
             initialScrollTop={scrollTop}
             onScrollPositionChange={setScrollTop}
-            onConfirm={() => confirmAction("CONFIRM")}
-            onEdit={() => confirmAction("EDIT")}
-            onCancel={() => confirmAction("CANCEL")}
+            onConfirm={(id) => confirmAction("CONFIRM", id)}
+            onEdit={(id) => confirmAction("EDIT", id)}
+            onCancel={(id) => confirmAction("CANCEL", id)}
+            onCancelledAction={handleCancelledAction}
             onRetry={sendMessage}
             onQuickAction={sendMessage}
           />

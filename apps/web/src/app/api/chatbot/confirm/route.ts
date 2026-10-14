@@ -48,7 +48,16 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server-auth";
-import { getDraft, setSession, clearAll } from "@/lib/chatbot/store";
+import {
+  getDraft,
+  setSession,
+  clearAll,
+  getSession,
+  markTransactionCancelled,
+  isTransactionCancelled,
+  markUserCancelled,
+  isUserCancelled,
+} from "@/lib/chatbot/store";
 import { confirmAndPersistTransaction } from "@/lib/transactions/persist";
 
 const VALID_ACTIONS = new Set(["CONFIRM", "CANCEL", "EDIT"]);
@@ -80,13 +89,40 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  const customIdempotencyKey =
+    typeof bodyObj?.["idempotencyKey"] === "string" && bodyObj["idempotencyKey"].trim()
+      ? (bodyObj["idempotencyKey"] as string).trim()
+      : undefined;
+  const transactionId =
+    typeof bodyObj?.["transactionId"] === "string" && bodyObj["transactionId"].trim()
+      ? (bodyObj["transactionId"] as string).trim()
+      : undefined;
+
+  const currentSession = getSession(userId);
+  const currentDraft = getDraft(userId);
+  const isDraftEmpty =
+    currentDraft.type === null &&
+    currentDraft.original_amount === null &&
+    currentDraft.expense_description === null &&
+    currentDraft.client_name === null;
+
+  // Check if this transaction has already been cancelled
+  if (
+    (customIdempotencyKey && isTransactionCancelled(customIdempotencyKey)) ||
+    (transactionId && isTransactionCancelled(transactionId)) ||
+    (isUserCancelled(userId) && (currentSession.status === "COLLECTING" || currentSession.status === "CANCELLED") && isDraftEmpty)
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "This transaction has already been cancelled. Please continue with a new transaction.",
+      },
+      { status: 400 },
+    );
+  }
+
   // -- CONFIRM --------------------------------------------------------------
   if (action === "CONFIRM") {
-    const customIdempotencyKey =
-      typeof bodyObj?.["idempotencyKey"] === "string" && bodyObj["idempotencyKey"].trim()
-        ? (bodyObj["idempotencyKey"] as string).trim()
-        : undefined;
-
     const result = await confirmAndPersistTransaction({
       userId,
       source: "chatbot",
@@ -113,6 +149,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // -- CANCEL ---------------------------------------------------------------
   if (action === "CANCEL") {
+    if (currentSession.idempotencyKey) {
+      markTransactionCancelled(currentSession.idempotencyKey);
+    }
+    if (customIdempotencyKey) {
+      markTransactionCancelled(customIdempotencyKey);
+    }
+    if (transactionId) {
+      markTransactionCancelled(transactionId);
+    }
+
+    markUserCancelled(userId);
     clearAll(userId);
 
     return NextResponse.json(
