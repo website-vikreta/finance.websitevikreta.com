@@ -4,13 +4,12 @@ import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { CLIENTS, type ClientRecord } from "@/lib/mock-data";
 import { formatINR } from "@/lib/format";
-import { Users, Building, Mail, ArrowUpRight, CheckCircle2, Clock } from "lucide-react";
+import { Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export default function ClientsPage() {
   const [clients] = useState<ClientRecord[]>(CLIENTS);
-  const [selectedClient, setSelectedClient] = useState<ClientRecord | null>(null);
 
   const totalOutstanding = clients.reduce((acc, c) => acc + c.outstanding, 0);
   const totalBilled = clients.reduce((acc, c) => acc + c.totalBilled, 0);
@@ -71,7 +70,6 @@ export default function ClientsPage() {
           {clients.map((c) => (
             <div
               key={c.id}
-              onClick={() => setSelectedClient(c)}
               className="flex flex-col justify-between rounded-2xl border border-border bg-card p-5 shadow-xs hover:border-neutral-300 transition-all cursor-pointer group"
             >
               <div>
