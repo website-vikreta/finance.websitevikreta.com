@@ -26,16 +26,22 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 ## Tokens & Theme
 
 ### [Tokens] — DESIGN.md is the visual source of truth
-- Rule: All colors, type, radius come from `DESIGN.md` via `app/globals.css`. Primary `#faff69`, canvas `#0a0a0a`, card `#1a1a1a`, hairline `#2a2a2a`. Never use the main Vikreta brand (`#FFD600`, `#FAFAF7`, Epilogue).
+- Rule: All colors, type, radius come from `DESIGN.md` via `app/globals.css`. Primary `#FFD600`, canvas `#F8F8F4`, card `#FFFFFF`, ink `#0A0A0A`, hairline `#E8E8E2`.
 - Where: `app/globals.css`, `.ai/standards/design-system.md`
-- Why: User chose the ClickHouse system (`npx getdesign@latest add clickhouse`) for this tool.
-- Date: 2026-10-07
+- Why: The UI moved to the light Vikreta theme with the Figma login/dashboard refresh (2026-10-10). The original ClickHouse dark spec (2026-10-07) is retired; `DESIGN.md` was rewritten to match the live tokens on 2026-10-15.
+- Date: 2026-10-15
 
-### [Tokens] — dark only, `.dark` always on
-- Rule: `<html class="dark">` permanently; palette lives in `:root`; no light theme, no toggle. New code doesn't write `dark:` variants. `<Toaster theme="dark" />`.
+### [Tokens] — light only, no `.dark`
+- Rule: Palette lives in `:root`; `<html>` has no `.dark` class; `<Toaster theme="light" />`; no toggle. New code doesn't write `dark:` variants.
 - Where: `app/layout.tsx`, `app/globals.css`
-- Why: DESIGN.md has no light surface. Keeping `.dark` on lets shadcn's built-in `dark:` styles apply.
-- Date: 2026-10-07
+- Why: One theme to maintain, matching the Figma refresh.
+- Date: 2026-10-15
+
+### [Tokens] — income/expense tokens are fills, not text
+- Rule: `bg-income` (#FFD600) and `bg-expense` (#CBD5E1) for chart series and bars only. Money in text = `text-success` with `+`; money out = `text-foreground` with `−`. Never `text-income`.
+- Where: `components/dashboard/cash-flow-chart.tsx`, `components/transactions/ledger-table.tsx`, `app/reports/page.tsx`
+- Why: Yellow on white is ~1.4:1 contrast. The chart previously used `bg-surface-elevated` (white) for expenses, which made the bars invisible.
+- Date: 2026-10-15
 
 ### [Tokens] — shadcn `accent` ≠ brand accent
 - Rule: `--accent` = `#242424` (hover/focus fill). Brand yellow is `--primary`. Use `hover:bg-accent` for hovers, `bg-primary` for the one primary action.
@@ -120,6 +126,41 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 ## Rejected
 
 ### [Rejected] — Website Vikreta marketing patterns
-- Rule: Don't port from `websitevikreta-fork`: Epilogue, `#FFD600`, light theme, GSAP reveals, `Reveal.tsx`, DotGrid, arrow-dots Button, SEO/GEO schema, Storyteller marketing arc. Only its `.ai/` folder layout was reused.
-- Why: Different product (internal tool) and different design system (DESIGN.md).
-- Date: 2026-10-07
+- Rule: Don't port from `websitevikreta-fork`: Epilogue, GSAP reveals, `Reveal.tsx`, DotGrid, arrow-dots Button, SEO/GEO schema, Storyteller marketing arc. The brand colors (`#FFD600`, light canvas) and the flat repo layout are shared; the marketing UI is not.
+- Why: Internal tool, not a marketing site.
+- Date: 2026-10-15
+
+## Data & Screens
+
+### [Data] — No made-up numbers on any screen
+- Rule: Every figure comes from Supabase via `lib/transactions/queries.ts` (server only). Modules with no tables yet (Invoices, Bank connections) render `ComingSoon` with what's planned. No fake badges ("Bank synced"), no fake toasts ("exported successfully"), no Save buttons that save nothing.
+- Where: `app/*/page.tsx`, `components/layout/coming-soon.tsx`, `components/layout/navbar.tsx`
+- Why: `lib/mock-data.ts` was removed 2026-10-15; mock data hid that pages weren't wired up.
+- Date: 2026-10-15
+
+### [Data] — Server pages + Suspense for DB reads
+- Rule: Pages are Server Components. Wrap each DB-reading component in `<Suspense>` with a `Skeleton` fallback shaped like the content (Cache Components needs it). Don't `"use cache"` ledger data; it must be fresh. Interactive bits (search, filters, paging, chart hover) are small client components that receive rows as props.
+- Where: `app/dashboard`, `app/transactions`, `app/clients`, `app/reports`, `app/settings`
+- Date: 2026-10-15
+
+### [Data] — Dates and periods in IST, returned as strings
+- Rule: SQL returns dates via `to_char(..., 'YYYY-MM-DD')` (raw pg turns DATE into a local-midnight JS Date). "This month" and the financial year (1 April) resolve in Asia/Kolkata (`lib/transactions/period.ts`). Display with `formatDate` / `formatMonthShort`, which parse as UTC.
+- Date: 2026-10-15
+
+### [Layout] — PageHeader + one action
+- Rule: Every page starts with `PageHeader` (title, one-line description, optional single action). "New transaction"/"Record income" use `NewTransactionButton`, which opens Finance AI through `useOpenFinanceAI()` from `AppShell`.
+- Where: `components/layout/page-header.tsx`, `components/layout/new-transaction-button.tsx`
+- Date: 2026-10-15
+
+### [Component] — Chat confirmation cards lock once settled
+- Rule: `ChatMessage.resolution` (`confirmed` | `cancelled` | `replaced`) is set on every open card when the server moves on; settled cards render without buttons. After a confirm, `router.refresh()` updates the visible page.
+- Where: `components/chat/chat-session-provider.tsx`, `components/chat/chat-message-list.tsx`, `components/chat/transaction-summary-card.tsx`
+- Why: Old cards kept live Confirm buttons that acted on whatever draft was current on the server.
+- Date: 2026-10-15
+
+### [Tokens] — ClickHouse discipline on the light theme
+- Rule: No dot patterns, textures, illustrations or decorative shapes. Two-tone headlines use `text-muted-foreground` for the second half, never yellow. No shadows on cards or chat bubbles. Type sizes only from tokens; `text-micro` (11px) added for chat timestamps and tiny badges instead of `text-[10px]`/`text-[11px]`.
+- Where: `components/dashboard/hero-card.tsx`, `components/layout/coming-soon.tsx`, `app/login/page.tsx`, `components/chat/*`, `app/globals.css`
+- Why: User wants the ClickHouse rules (one accent, flat, no decoration) applied consistently while keeping the light theme; no dark mode for now. `.bg-dot-pattern` and the two brand illustration PNGs were removed.
+- Date: 2026-10-15
+

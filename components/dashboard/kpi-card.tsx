@@ -1,7 +1,17 @@
 import { ArrowLeftRight, BarChart2, CreditCard, Users } from "lucide-react";
 import { formatINR } from "@/lib/format";
-import type { KPICardData } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+
+export interface KPICardData {
+  id: string;
+  label: string;
+  /** Rupees, or a plain count when `isCount` is set. */
+  amount: number;
+  isCount?: boolean;
+  badgeText: string;
+  badgeType: "positive" | "negative" | "neutral";
+  iconName: "credit-card" | "arrow-left-right" | "bar-chart-2" | "users";
+}
 
 const icons = {
   "credit-card": CreditCard,
@@ -21,8 +31,10 @@ export function KPICard({ card }: { card: KPICardData }) {
         </div>
         <span
           className={cn(
-            "text-caption border-b-2 pb-1 text-right text-foreground",
-            card.badgeType === "positive" ? "border-primary" : "border-border",
+            "text-caption border-b-2 pb-1 text-right",
+            card.badgeType === "positive" && "border-primary text-foreground",
+            card.badgeType === "negative" && "border-destructive text-foreground",
+            card.badgeType === "neutral" && "border-border text-muted-foreground",
           )}
         >
           {card.badgeText}
@@ -32,7 +44,7 @@ export function KPICard({ card }: { card: KPICardData }) {
       <div className="mt-8 min-w-0">
         <p className="text-eyebrow text-muted-foreground">{card.label}</p>
         <p className="mt-2 truncate font-mono text-title-lg tabular-nums text-foreground sm:text-display-sm">
-          {formatINR(card.amount)}
+          {card.isCount ? card.amount : formatINR(card.amount)}
         </p>
       </div>
     </section>

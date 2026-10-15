@@ -1,15 +1,22 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { Navbar } from "./navbar";
 import { Sidebar } from "./sidebar";
 import { FinanceAIDrawer } from "@/components/chat/finance-ai-drawer";
 import { Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface AppShellProps {
   children: React.ReactNode;
+}
+
+const OpenFinanceAIContext = createContext<() => void>(() => {});
+
+/** Opens the Finance AI panel from anywhere inside the shell (e.g. a "New transaction" button). */
+export function useOpenFinanceAI() {
+  return useContext(OpenFinanceAIContext);
 }
 
 /** Min/max chat panel widths in pixels. */
@@ -28,12 +35,6 @@ export function AppShell({ children }: AppShellProps) {
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleExport = () => {
-    toast.success("Finance report exported successfully", {
-      description: "Downloaded complete CSV audit for current fiscal period.",
-    });
-  };
 
   const handleOpenFinanceAI = () => {
     if (typeof window !== "undefined" && window.innerWidth >= 768 && window.innerWidth < 1024) {
@@ -140,7 +141,6 @@ export function AppShell({ children }: AppShellProps) {
         onToggleSidebar={() => setMobileSidebarOpen((v) => !v)}
         onOpenFinanceAI={handleToggleFinanceAI}
         isFinanceAIOpen={financeAIOpen}
-        onExport={handleExport}
       />
 
       <div ref={containerRef} className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -160,23 +160,22 @@ export function AppShell({ children }: AppShellProps) {
           )}
         >
           <div className="mx-auto max-w-7xl space-y-6">
-            {children}
+            <OpenFinanceAIContext.Provider value={handleOpenFinanceAI}>{children}</OpenFinanceAIContext.Provider>
           </div>
         </main>
 
         {/* Floating "Ask Finance AI" pill at bottom-right */}
         {!financeAIOpen && (
-          <button
+          <Button
+            type="button"
             onClick={handleOpenFinanceAI}
-            id="floating-ask-finance-ai-pill"
-            aria-label="Open Finance Chat Bot chat"
-            className="fixed bottom-6 right-6 z-30 flex items-center gap-2.5 rounded-full bg-foreground px-4 py-2.5 text-xs font-bold text-background transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            variant="outline"
+            aria-label="Open Finance Chat Bot"
+            className="fixed right-6 bottom-6 z-30 bg-card shadow-md"
           >
-            <div className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Sparkles className="size-3.5 fill-current" />
-            </div>
-            <span>Ask Finance Chat Bot</span>
-          </button>
+            <Sparkles aria-hidden />
+            Ask Finance Chat Bot
+          </Button>
         )}
 
         {/* ── Resizable Divider (desktop only, visible when chat panel is open) ── */}

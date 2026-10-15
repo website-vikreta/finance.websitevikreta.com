@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ChatInput } from "./chat-input";
 import { ChatMessageList } from "./chat-message-list";
 import { useChatSession } from "./chat-session-provider";
@@ -80,13 +81,13 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
                 <div className="flex items-center gap-2">
                   <h2 className="text-title-sm font-semibold text-foreground truncate">Finance Chat Bot</h2>
                   {status === "READY_FOR_CONFIRMATION" ? (
-                    <Badge variant="outline" className="border-primary/40 bg-primary/10 px-1.5 py-0 text-[10px] font-medium text-primary shrink-0">Review Pending</Badge>
+                    <Badge variant="outline" className="border-primary/40 bg-primary/10 px-1.5 py-0 text-micro font-medium text-primary shrink-0">Review Pending</Badge>
                   ) : status === "AWAITING_EXCHANGE_RATE" ? (
-                    <Badge variant="outline" className="border-warning/40 bg-warning/10 px-1.5 py-0 text-[10px] font-medium text-warning shrink-0">Rate Required</Badge>
+                    <Badge variant="outline" className="border-warning/40 bg-warning/10 px-1.5 py-0 text-micro font-medium text-warning shrink-0">Rate Required</Badge>
                   ) : status === "CONFIRMED" ? (
-                    <Badge variant="outline" className="border-success/40 bg-success/10 px-1.5 py-0 text-[10px] font-medium text-success shrink-0">Confirmed</Badge>
+                    <Badge variant="outline" className="border-success/40 bg-success/10 px-1.5 py-0 text-micro font-medium text-success shrink-0">Confirmed</Badge>
                   ) : (
-                    <span className="font-mono text-[11px] text-muted-foreground shrink-0">v0.1</span>
+                    <span className="font-mono text-micro text-muted-foreground shrink-0">v0.1</span>
                   )}
                 </div>
                 <p className="text-caption text-muted-foreground truncate">Record &amp; track transactions in INR / USD</p>
@@ -94,12 +95,12 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              <button type="button" onClick={resetConversation} title="Reset conversation draft" aria-label="Reset conversation" disabled={isLoading || isPendingAction} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50">
-                <RotateCcw className="size-4" aria-hidden />
-              </button>
-              <button type="button" onClick={onClose} aria-label="Close Finance Chat Bot" className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-                <X className="size-4.5" aria-hidden />
-              </button>
+              <Button type="button" variant="ghost" size="icon" onClick={resetConversation} title="Reset conversation draft" aria-label="Reset conversation" disabled={isLoading || isPendingAction} className="text-muted-foreground">
+                <RotateCcw aria-hidden />
+              </Button>
+              <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close Finance Chat Bot" className="text-muted-foreground">
+                <X aria-hidden />
+              </Button>
             </div>
           </header>
 

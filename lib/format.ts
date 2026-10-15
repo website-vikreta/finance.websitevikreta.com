@@ -49,6 +49,27 @@ export function formatINR(
   return formatted;
 }
 
+/** "2026-10-01" → "Oct". Parsed as UTC so the server timezone never shifts the month. */
+export function formatMonthShort(ymd: string): string {
+  return new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
+}
+
+/** "2026-10-14" → "14 Oct 2026". */
+export function formatDate(ymd: string): string {
+  return new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Percent change from `previous` to `current`, or null when there is no baseline. */
+export function percentChange(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
 export function formatCurrentHeroDate(date: Date = new Date()): string {
   const weekday = date.toLocaleDateString("en-IN", { weekday: "long" });
   const day = date.getDate();
@@ -56,37 +77,9 @@ export function formatCurrentHeroDate(date: Date = new Date()): string {
   return `${weekday}, ${day} ${month} · All figures shown in INR unless noted.`;
 }
 
-export type PaymentStatus = "paid" | "due" | "overdue";
-
-export const STATUS_CONFIG: Record<
-  PaymentStatus,
-  {
-    label: string;
-    bgClass: string;
-    textClass: string;
-    borderClass: string;
-    barColor: string;
-  }
-> = {
-  paid: {
-    label: "Paid",
-    bgClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    textClass: "text-emerald-600",
-    borderClass: "border-emerald-500",
-    barColor: "#22C55E",
-  },
-  due: {
-    label: "Due",
-    bgClass: "bg-amber-50 text-amber-800 border-amber-200",
-    textClass: "text-amber-600",
-    borderClass: "border-amber-400",
-    barColor: "#FFD600",
-  },
-  overdue: {
-    label: "Overdue",
-    bgClass: "bg-rose-50 text-rose-700 border-rose-200",
-    textClass: "text-rose-600",
-    borderClass: "border-rose-400",
-    barColor: "#EF4444",
-  },
-};
+/** Share of a total for labels: "<1%" for tiny non-zero parts so they never read as nothing. */
+export function formatShare(part: number, total: number): string {
+  if (total <= 0 || part <= 0) return "0%";
+  const pct = (part / total) * 100;
+  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}

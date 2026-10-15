@@ -13,7 +13,7 @@
 ## Folder Structure
 
 ```
-DESIGN.md            Visual source of truth (ClickHouse system, dark + #faff69)
+DESIGN.md            Visual source of truth (light theme, Vikreta yellow #FFD600)
 .ai/
 ├── agents/          Role personas (Designer, Builder, Critic)
 ├── context/         Stable facts + session scratchpad

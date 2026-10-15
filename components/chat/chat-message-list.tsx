@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AlertCircle, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { TransactionSummaryCard } from "./transaction-summary-card";
 import type { ChatMessage } from "./types";
 
@@ -80,15 +81,15 @@ export function ChatMessageList({
           </div>
 
           <div className="min-w-0 flex-1 space-y-2.5">
-            <div className="rounded-2xl border border-border bg-card p-4 text-foreground shadow-sm">
-              <h3 className="text-title-sm font-bold text-foreground">
+            <div className="rounded-xl border border-border bg-card p-4 text-foreground">
+              <h3 className="text-title-sm text-foreground">
                 Welcome to Finance Chat Bot! 👋
               </h3>
               <p className="mt-1.5 text-body-sm text-muted-foreground leading-relaxed">
                 I’m your virtual finance assistant. I’m here to help you manage your income and expenses, record transaction details, handle multiple currencies, and guide you through the transaction confirmation process. Let’s get started!
               </p>
               <div className="mt-2.5 flex justify-end">
-                <span className="text-[11px] font-mono text-muted-foreground/70">
+                <span className="text-micro font-mono text-muted-foreground/70">
                   {welcomeTime || "06:07 PM"}
                 </span>
               </div>
@@ -96,24 +97,7 @@ export function ChatMessageList({
 
             {/* Render initial quick action pills when conversation is fresh */}
             {messages.length === 0 && (
-              <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                <button
-                  type="button"
-                  disabled={isLoading || isPendingAction}
-                  onClick={() => onQuickAction("I want to add an expense")}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-1.5 text-caption font-semibold text-foreground hover:bg-accent hover:border-primary/50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 shadow-xs active:scale-95 cursor-pointer"
-                >
-                  Add Expense
-                </button>
-                <button
-                  type="button"
-                  disabled={isLoading || isPendingAction}
-                  onClick={() => onQuickAction("I want to add an income")}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-1.5 text-caption font-semibold text-foreground hover:bg-accent hover:border-primary/50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 shadow-xs active:scale-95 cursor-pointer"
-                >
-                  Add Income
-                </button>
-              </div>
+              <QuickActions disabled={isLoading || isPendingAction} onQuickAction={onQuickAction} className="pt-0.5" />
             )}
           </div>
         </div>
@@ -127,10 +111,10 @@ export function ChatMessageList({
         if (isUser) {
           return (
             <div key={message.id} className="flex flex-col items-end">
-              <div className="max-w-[85%] rounded-2xl bg-foreground px-4 py-2.5 text-body-sm font-medium text-background shadow-sm">
+              <div className="max-w-[85%] rounded-xl bg-foreground px-4 py-2.5 text-body-sm font-medium text-background">
                 <p className="whitespace-pre-wrap break-words">{message.content}</p>
               </div>
-              <span className="mt-1 text-[11px] font-mono text-muted-foreground/70 px-1">
+              <span className="mt-1 text-micro font-mono text-muted-foreground/70 px-1">
                 {message.timestamp}
               </span>
             </div>
@@ -166,13 +150,15 @@ export function ChatMessageList({
                     )}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-border bg-card px-4 py-2.5 text-body-sm text-foreground shadow-sm">
+                  <div className="rounded-xl border border-border bg-card px-4 py-2.5 text-body-sm text-foreground">
                     <p className="whitespace-pre-wrap break-words">{message.content}</p>
 
                     {/* Pending Confirmation Transaction Card */}
-                    {message.confirmation?.transaction && (
+                    {message.confirmation?.transaction && message.resolution !== "confirmed" && (
                       <TransactionSummaryCard
                         transaction={message.confirmation.transaction}
+                        isCancelled={Boolean(message.resolution)}
+                        discardedLabel={message.resolution === "replaced" ? "Replaced" : "Discarded"}
                         isPendingAction={isPendingAction}
                         onConfirm={onConfirm}
                         onEdit={onEdit}
@@ -197,7 +183,7 @@ export function ChatMessageList({
                   </div>
                 )}
 
-                <span className="mt-1 inline-block text-[11px] font-mono text-muted-foreground/70 px-1">
+                <span className="mt-1 inline-block text-micro font-mono text-muted-foreground/70 px-1">
                   {message.timestamp}
                 </span>
               </div>
@@ -209,27 +195,10 @@ export function ChatMessageList({
       {/* ── Post-Confirmation / Loop Quick Action Pills ── */}
       {isPostConfirmationOrCancel && (
         <div className="flex flex-col items-start pl-9 pt-1">
-          <p className="text-[11px] font-mono text-muted-foreground mb-1.5">
+          <p className="text-micro font-mono text-muted-foreground mb-1.5">
             Start next transaction:
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={isLoading || isPendingAction}
-              onClick={() => onQuickAction("I want to add an expense")}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-1.5 text-caption font-semibold text-foreground hover:bg-accent hover:border-primary/50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 shadow-xs active:scale-95 cursor-pointer"
-            >
-              Add Expense
-            </button>
-            <button
-              type="button"
-              disabled={isLoading || isPendingAction}
-              onClick={() => onQuickAction("I want to add an income")}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-1.5 text-caption font-semibold text-foreground hover:bg-accent hover:border-primary/50 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 shadow-xs active:scale-95 cursor-pointer"
-            >
-              Add Income
-            </button>
-          </div>
+          <QuickActions disabled={isLoading || isPendingAction} onQuickAction={onQuickAction} />
         </div>
       )}
 
@@ -239,7 +208,7 @@ export function ChatMessageList({
           <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-elevated border border-border text-primary animate-pulse">
             <Sparkles className="size-3.5" aria-hidden />
           </div>
-          <div className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="size-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
               <span className="size-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
@@ -252,6 +221,39 @@ export function ChatMessageList({
         </div>
       )}
 
+    </div>
+  );
+}
+
+const QUICK_ACTIONS = [
+  { label: "Add expense", message: "I want to add an expense" },
+  { label: "Add income", message: "I want to add an income" },
+] as const;
+
+function QuickActions({
+  disabled,
+  onQuickAction,
+  className,
+}: {
+  disabled: boolean;
+  onQuickAction: (actionText: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
+      {QUICK_ACTIONS.map((action) => (
+        <Button
+          key={action.label}
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          onClick={() => onQuickAction(action.message)}
+          className="rounded-full px-3"
+        >
+          {action.label}
+        </Button>
+      ))}
     </div>
   );
 }

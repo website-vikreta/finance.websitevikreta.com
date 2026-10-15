@@ -37,6 +37,7 @@ import { mergeDraft } from "@/lib/chatbot/merge";
 import { getDraft, setDraft, getSession, setSession, clearAll } from "@/lib/chatbot/store";
 import { validateExtraction } from "@/lib/chatbot/validate";
 import { parseExchangeRate, buildConfirmation } from "@/lib/chatbot/confirm";
+import { detectContradiction, extractExplicitExchangeRate } from "@/lib/chatbot/clarify";
 import { confirmAndPersistTransaction } from "@/lib/transactions/persist";
 import crypto from "crypto";
 
@@ -218,7 +219,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           status: "AWAITING_EXCHANGE_RATE",
           draft: getDraft(userId),
           question:
-            "Enter the USD → INR exchange rate (e.g. 88.50). Rate service is unavailable — please enter the rate by hand.",
+            "What USD → INR rate should I use? Send just the number, e.g. 88.50.",
         },
         { status: 200 },
       );
@@ -539,12 +540,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const extraction = extractResult.data;
 
+  // Two alternative values for one field ("$50 or $60") — drop it and ask, never guess.
+  const contradiction = detectContradiction(message);
+  if (contradiction) extraction[contradiction.field] = null;
+
   // Phase 3 — merge + store
   const draft = mergeDraft(existing, extraction);
   setDraft(userId, draft);
 
   // Phase 2 — validate merged draft
   const validation = validateExtraction(draft);
+
+  if (contradiction) {
+    const clarifying = { ...validation, complete: false, missingField: contradiction.field, question: contradiction.question };
+    return NextResponse.json(
+      { ok: true, status: "COLLECTING", extraction, draft, validation: clarifying, question: contradiction.question },
+      { status: 200 },
+    );
+  }
 
   // Still collecting fields — return next question
   if (!validation.complete) {
@@ -604,7 +617,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // USD path — ask manager for exchange rate
+  // USD path — use a rate stated in this message ("…at 85 per dollar"), otherwise ask for one.
+  // ponytail: only the current message is checked; a rate given in an earlier turn is asked for again
+  const statedRate = extractExplicitExchangeRate(message);
+  if (statedRate !== null) {
+    const result = buildConfirmation(draft, statedRate);
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
+
+    setSession(userId, {
+      status: "READY_FOR_CONFIRMATION",
+      idempotencyKey: session.idempotencyKey || `chat-${userId}-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+      currency: {
+        original_amount: draft.original_amount as number,
+        original_currency: "USD",
+        exchange_rate: statedRate,
+        inr_amount: result.transaction.inr_amount,
+        exchange_rate_date: today,
+      },
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        status: "READY_FOR_CONFIRMATION",
+        extraction,
+        draft,
+        validation,
+        confirmation: { required: true, transaction: result.transaction },
+        currency: { exchange_rate: statedRate, inr_amount: result.transaction.inr_amount },
+      },
+      { status: 200 },
+    );
+  }
+
   setSession(userId, { status: "AWAITING_EXCHANGE_RATE" });
 
   return NextResponse.json(
@@ -615,7 +662,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       draft,
       validation,
       question:
-        "Enter the USD → INR exchange rate (e.g. 88.50). Rate service is unavailable — please enter the rate by hand.",
+        "What USD → INR rate should I use? Send just the number, e.g. 88.50.",
     },
     { status: 200 },
   );

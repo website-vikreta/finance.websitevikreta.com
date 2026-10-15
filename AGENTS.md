@@ -11,8 +11,9 @@ Entering a transaction takes seconds (form or chatbot). Reading the numbers take
 
 ## Non-Negotiables
 
-- **Visual source of truth: `DESIGN.md`** (ClickHouse system). Near-black canvas, electric yellow `#faff69`, Inter + JetBrains Mono. Dark only.
-- Do **not** borrow UI from the main Website Vikreta site (light theme, `#FFD600`, Epilogue). Different product, different system.
+- **Visual source of truth: `DESIGN.md`** (light theme). Warm off-white canvas, white cards, near-black ink, Vikreta yellow `#FFD600` as the only accent, Inter + JetBrains Mono. Light only.
+- Shares the main Website Vikreta brand colors, but **not** its marketing UI (Epilogue, GSAP reveals, marketing sections). This is an internal tool.
+- **No made-up data.** Pages show what's in the database; modules without a backend use `ComingSoon`.
 - **Money is exact.** Integer minor units, stored rate per transaction, INR is the base currency. See `.ai/standards/data-safety.md`.
 - **Nothing saves silently.** Chatbot entries always show a confirm card first.
 - **Every write is audited**, every delete is soft.

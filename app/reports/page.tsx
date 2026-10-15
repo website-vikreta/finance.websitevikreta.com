@@ -1,172 +1,163 @@
-"use client";
-
-import Image from "next/image";
+import Link from "next/link";
+import { Suspense } from "react";
+import { Download } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
-import { formatINR } from "@/lib/format";
-import { Download, TrendingUp, TrendingDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { PageHeader } from "@/components/layout/page-header";
+import { StatTile } from "@/components/layout/stat-tile";
+import { buttonVariants } from "@/components/ui/button";
+import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatINR, formatMonthShort, formatShare } from "@/lib/format";
+import { PERIODS, parsePeriod, periodStart, type Period } from "@/lib/transactions/period";
+import { expenseBreakdown, incomeBreakdown, monthlyTotals, type Breakdown } from "@/lib/transactions/queries";
+import { cn } from "@/lib/utils";
 
-export default function ReportsPage() {
-  const handleExportCSV = () => {
-    toast.success("CSV Download initiated", {
-      description: "Financial breakdown exported to your downloads folder.",
-    });
-  };
+const TOP_N = 8;
 
-  const revenueCategories = [
-    { name: "Web & Full-Stack Apps", amount: 4_20_000, percentage: 50 },
-    { name: "AI Automation Workflows", amount: 2_60_000, percentage: 31 },
-    { name: "UI/UX & Retainers", amount: 1_62_600, percentage: 19 },
-  ];
-
-  const expenseCategories = [
-    { name: "Team Payroll & Contractors", amount: 2_10_000, percentage: 66 },
-    { name: "Office Rent & Facilities", amount: 65_000, percentage: 20 },
-    { name: "Software, LLM APIs & Cloud", amount: 28_440, percentage: 9 },
-    { name: "Marketing & Lead Acquisition", amount: 14_800, percentage: 5 },
-  ];
+function BreakdownCard({ title, items, empty, barClass }: { title: string; items: Breakdown[]; empty: string; barClass: string }) {
+  const total = items.reduce((s, i) => s + i.amount, 0);
+  const top = items.slice(0, TOP_N);
+  const rest = items.slice(TOP_N).reduce((s, i) => s + i.amount, 0);
+  const rows = rest > 0 ? [...top, { name: `${items.length - TOP_N} more`, amount: rest, count: 0 }] : top;
 
   return (
-    <AppShell>
-      <div className="space-y-6">
-        {/* Header Hero Banner with illustration-web-development.png */}
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 md:p-8 shadow-xs">
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="space-y-2 max-w-lg">
-              <span className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground">
-                Audited Statements
-              </span>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-foreground tracking-tight">
-                Financial Reports & Profitability
-              </h1>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Reconciled metrics for fiscal tax filing, P&L statements, and automated cash flow forecasting.
-              </p>
-
-              <div className="pt-2 flex items-center gap-3">
-                <Button
-                  onClick={handleExportCSV}
-                  className="rounded-full bg-black text-white hover:bg-neutral-800 gap-2 h-8 text-xs font-semibold px-4"
-                >
-                  <Download className="size-3 text-[#FFD600]" />
-                  <span>Export CSV</span>
-                </Button>
-              </div>
-            </div>
-
-            {/* Watercolor Illustration from Public Brand */}
-            <div className="relative h-32 w-48 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-neutral-100/50 hidden sm:block">
-              <Image
-                src="/brand/illustration-web-development.png"
-                alt="Web development and finance illustration"
-                fill
-                className="object-contain p-2"
-                priority
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* P&L Executive Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                Gross Revenue
-              </span>
-              <TrendingUp className="size-4 text-emerald-600" />
-            </div>
-            <div className="text-2xl font-extrabold font-mono text-emerald-600 mt-2">
-              {formatINR(8_42_600)}
-            </div>
-            <span className="text-[11px] text-muted-foreground mt-1 block">
-              +12.4% vs previous month
-            </span>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                Total Operating Expenses
-              </span>
-              <TrendingDown className="size-4 text-neutral-500" />
-            </div>
-            <div className="text-2xl font-extrabold font-mono text-foreground mt-2">
-              {formatINR(3_18_240)}
-            </div>
-            <span className="text-[11px] text-muted-foreground mt-1 block">
-              -4.8% operating optimization
-            </span>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">
-                Net Margin (Profit)
-              </span>
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                62.2% Margin
-              </span>
-            </div>
-            <div className="text-2xl font-extrabold font-mono text-[#0A0A0A] mt-2">
-              {formatINR(5_24_360)}
-            </div>
-            <span className="text-[11px] text-muted-foreground mt-1 block">
-              Retained in primary reserves
-            </span>
-          </div>
-        </div>
-
-        {/* Category Breakdown Breakdown Columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Revenue Breakdown */}
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-xs space-y-4">
-            <h2 className="text-sm font-bold text-foreground">
-              Revenue by Service Line
-            </h2>
-            <div className="space-y-3.5">
-              {revenueCategories.map((cat) => (
-                <div key={cat.name} className="space-y-1.5 text-xs">
-                  <div className="flex justify-between font-medium">
-                    <span>{cat.name}</span>
-                    <span className="font-mono font-bold">{formatINR(cat.amount)} ({cat.percentage}%)</span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-                    <div
-                      style={{ width: `${cat.percentage}%` }}
-                      className="h-full rounded-full bg-[#FFD600]"
-                    />
-                  </div>
+    <section className="rounded-xl border border-border bg-card p-6">
+      <h2 className="text-title-md">{title}</h2>
+      {rows.length === 0 ? (
+        <p className="mt-4 text-body-sm text-muted-foreground">{empty}</p>
+      ) : (
+        <ul className="mt-5 space-y-4">
+          {rows.map((item) => {
+            const share = (item.amount / total) * 100;
+            return (
+              <li key={item.name} className="space-y-1.5">
+                <div className="flex justify-between gap-3 text-body-sm">
+                  <span className="truncate text-foreground">{item.name}</span>
+                  <span className="shrink-0 font-mono tabular-nums text-foreground">
+                    {formatINR(item.amount)} <span className="text-muted-foreground">· {formatShare(item.amount, total)}</span>
+                  </span>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Expense Breakdown */}
-          <div className="rounded-2xl border border-border bg-card p-6 shadow-xs space-y-4">
-            <h2 className="text-sm font-bold text-foreground">
-              Expenses by Operational Category
-            </h2>
-            <div className="space-y-3.5">
-              {expenseCategories.map((cat) => (
-                <div key={cat.name} className="space-y-1.5 text-xs">
-                  <div className="flex justify-between font-medium">
-                    <span>{cat.name}</span>
-                    <span className="font-mono font-bold">{formatINR(cat.amount)} ({cat.percentage}%)</span>
-                  </div>
-                  <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-                    <div
-                      style={{ width: `${cat.percentage}%` }}
-                      className="h-full rounded-full bg-neutral-400"
-                    />
-                  </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div className={cn("h-full rounded-full", barClass)} style={{ width: `${share}%` }} />
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+async function ReportData({ period }: { period: Period }) {
+  const from = periodStart(period);
+  const [income, expenses, months] = await Promise.all([incomeBreakdown(from), expenseBreakdown(from), monthlyTotals(12)]);
+  const totalIn = income.reduce((s, i) => s + i.amount, 0);
+  const totalOut = expenses.reduce((s, i) => s + i.amount, 0);
+  const net = totalIn - totalOut;
+  const margin = totalIn > 0 ? `${((net / totalIn) * 100).toFixed(1)}% margin` : "No income in this period";
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatTile label="INCOME" value={formatINR(totalIn)} note={`${income.reduce((s, i) => s + i.count, 0)} payments`} />
+        <StatTile label="EXPENSES" value={formatINR(totalOut)} note={`${expenses.reduce((s, i) => s + i.count, 0)} entries`} />
+        <StatTile label="NET PROFIT" value={formatINR(net)} note={margin} />
       </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <BreakdownCard title="Income by client" items={income} empty="No income recorded in this period." barClass="bg-primary" />
+        <BreakdownCard title="Expenses by description" items={expenses} empty="No expenses recorded in this period." barClass="bg-expense" />
+      </div>
+
+      <section className="overflow-hidden rounded-xl border border-border bg-card">
+        <h2 className="border-b border-border px-6 py-4 text-title-md">Last 12 months</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[480px] text-body-sm">
+            <thead className="bg-muted/60">
+              <tr className="text-eyebrow text-muted-foreground">
+                <th scope="col" className="px-6 py-3 text-left font-semibold">Month</th>
+                <th scope="col" className="px-6 py-3 text-right font-semibold">Income</th>
+                <th scope="col" className="px-6 py-3 text-right font-semibold">Expenses</th>
+                <th scope="col" className="px-6 py-3 text-right font-semibold">Net</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border font-mono tabular-nums">
+              {[...months].reverse().map((m) => {
+                const rowNet = m.income - m.expense;
+                return (
+                  <tr key={m.month}>
+                    <td className="px-6 py-3 font-sans text-foreground">
+                      {formatMonthShort(m.month)} {m.month.slice(0, 4)}
+                    </td>
+                    <td className="px-6 py-3 text-right">{formatINR(m.income)}</td>
+                    <td className="px-6 py-3 text-right">{formatINR(m.expense)}</td>
+                    <td className={cn("px-6 py-3 text-right", rowNet < 0 ? "text-destructive" : "text-foreground")}>{formatINR(rowNet)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
+  );
+}
+
+async function Report({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const period = parsePeriod((await searchParams).period);
+
+  return (
+    <>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <nav aria-label="Report period" className={segmentedTrack}>
+          {(Object.keys(PERIODS) as Period[]).map((p) => (
+            <Link
+              key={p}
+              href={`/reports?period=${p}`}
+              aria-current={p === period ? "page" : undefined}
+              className={segmentedItem(p === period)}
+            >
+              {PERIODS[p]}
+            </Link>
+          ))}
+        </nav>
+        <a
+          href={`/api/reports/export?period=${period}`}
+          className={buttonVariants()}
+        >
+          <Download aria-hidden />
+          Export CSV
+        </a>
+      </div>
+      <Suspense key={period} fallback={<ReportSkeleton />}>
+        <ReportData period={period} />
+      </Suspense>
+    </>
+  );
+}
+
+function ReportSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
+      </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Skeleton className="h-72 rounded-xl" />
+        <Skeleton className="h-72 rounded-xl" />
+      </div>
+    </>
+  );
+}
+
+export default function ReportsPage({ searchParams }: PageProps<"/reports">) {
+  return (
+    <AppShell>
+      <PageHeader title="Reports" description="Profit and loss from confirmed transactions. Financial year runs April to March." />
+      <Suspense fallback={<ReportSkeleton />}>
+        <Report searchParams={searchParams} />
+      </Suspense>
     </AppShell>
   );
 }

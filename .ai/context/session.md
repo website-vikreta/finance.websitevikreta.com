@@ -6,6 +6,15 @@
 
 ## Current Task
 
+2026-10-15: Real data everywhere + PR #6 port (branch `feat/supabase-real-data`, on top of PR #7 flatten).
+- Dashboard, Transactions, Clients, Reports, Settings read Supabase through `lib/transactions/queries.ts`; `lib/mock-data.ts` deleted. Invoices and Bank connections show `ComingSoon` (no tables yet).
+- CSV export: `GET /api/reports/export?period=month|fy|all` (auth-guarded, formula-injection safe). Navbar Export and Reports/Settings use it.
+- From PR #6 (not merged): stated exchange rate in the same message, contradiction clarification, client-name cleanup (`lib/chatbot/clarify.ts`, 31 checks in `__tests__/clarify.ts`).
+- Chat cards lock after confirm/cancel/replace; pages refresh after a save.
+- DB cleanup: 38 test-suite transactions + 2 test-only clients (Stripe, Zenith Inc) soft-deleted with 40 audit events. The api/integration/persistence suites still write to the live DB; don't run them against production until they get a separate database.
+- Docs moved to the light theme (DESIGN.md rewritten, design-system.md, brand.md, AGENTS.md, learning.md).
+
+
 2026-10-09: Chatbot Phases 4+5 complete.
 - Phase 4: currency processing — INR direct, USD via manager-entered rate (`parseExchangeRate` + `buildConfirmation`)
 - Phase 5: confirmation state machine — `COLLECTING → AWAITING_EXCHANGE_RATE → READY_FOR_CONFIRMATION → CONFIRMED/CANCELLED`
@@ -74,7 +83,7 @@
 
 ## Locked Decisions
 
-- Visual system: `DESIGN.md` (ClickHouse). Dark only. `#faff69` primary. Inter + JetBrains Mono. NOT the main Vikreta brand.
+- Visual system: `DESIGN.md` (light Website Vikreta finance theme). Light only. `#FFD600` primary on `#F8F8F4` canvas, white cards. Inter + JetBrains Mono. Rewritten 2026-10-15 to match the live UI (the ClickHouse dark spec is retired).
 - UI kit: shadcn/ui, style `base-nova`, Base UI primitives, lucide icons. Components live in `components/ui/`.
 - Framework: Next.js 16 App Router, React 19, Tailwind v4, TypeScript strict.
 - INR is the base currency. All analytics use `inr_amount`.

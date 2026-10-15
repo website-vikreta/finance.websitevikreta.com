@@ -23,6 +23,8 @@ export interface ChatMessage {
     transaction: ConfirmationTransaction;
   };
   confirmedTransaction?: ConfirmationTransaction;
+  /** Set once a confirmation card is settled; its buttons must not act on the server's newer draft. */
+  resolution?: "confirmed" | "cancelled" | "replaced";
   isRatePrompt?: boolean;
   isError?: boolean;
   errorMessage?: string;

@@ -93,7 +93,7 @@ export default function LoginPage() {
             </div>
 
             {errorMessage ? (
-              <p id="login-error" role="alert" className="text-caption text-expense">
+              <p id="login-error" role="alert" className="text-caption text-destructive">
                 {errorMessage}
               </p>
             ) : (
@@ -120,8 +120,8 @@ export default function LoginPage() {
       </section>
 
       <aside className="hidden p-4 lg:block">
-        <div className="relative flex min-h-[calc(100dvh-2rem)] overflow-hidden rounded-xl bg-primary p-10 text-primary-foreground xl:p-12">
-          <div className="relative z-10 flex max-w-md flex-col">
+        <div className="relative flex min-h-[calc(100dvh-2rem)] rounded-xl bg-primary p-10 text-primary-foreground xl:p-12">
+          <div className="flex max-w-md flex-col">
             <p className="text-eyebrow">Website Vikreta finance</p>
             <h2 className="mt-8 text-display-md xl:text-display-lg">
               Money should feel this clear.
@@ -129,17 +129,6 @@ export default function LoginPage() {
             <p className="mt-5 text-body-md">
               One place to see what came in, what went out, and what is left.
             </p>
-          </div>
-
-          <div
-            className="absolute bottom-20 left-1/2 size-64 -translate-x-1/2"
-            aria-hidden
-          >
-            <span className="absolute inset-x-0 bottom-8 h-24 -rotate-12 rounded-full bg-primary-active" />
-            <span className="absolute inset-x-8 bottom-3 h-24 rotate-12 rounded-full bg-background/15" />
-            <span className="absolute left-1/2 top-0 size-24 -translate-x-1/2 rounded-full bg-background" />
-            <span className="absolute left-[35%] top-28 h-1 w-24 rotate-12 rounded-full bg-background" />
-            <span className="absolute left-[57%] top-28 h-1 w-20 -rotate-45 rounded-full bg-background" />
           </div>
 
           <p className="absolute bottom-10 left-10 text-caption xl:left-12">

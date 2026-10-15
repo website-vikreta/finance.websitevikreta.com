@@ -62,7 +62,7 @@ export function ChatInput({ status, isLoading, onSend }: ChatInputProps) {
         />
 
         <div className="flex items-center justify-between border-t border-border/50 pt-2 px-1">
-          <span className="text-[11px] font-mono text-muted-foreground">
+          <span className="text-micro font-mono text-muted-foreground">
             {isLoading ? "Processing..." : "Press Enter ↵ to send"}
           </span>
 
