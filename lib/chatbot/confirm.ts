@@ -23,6 +23,7 @@
  */
 
 import type { ExtractionResult } from "./extract";
+import { convertUsdToInrDecimal, DecimalPrecisionError } from "@/lib/currency/precision";
 
 // --- Types -------------------------------------------------------------------
 
@@ -95,11 +96,17 @@ export function parseExchangeRate(message: string): number | null {
 // --- INR calculation ---------------------------------------------------------
 
 /**
- * Converts USD amount to INR using manager-supplied rate.
- * Rounds to 2 decimal places (half-up). Phase 6 converts to paise.
+ * Converts USD amount to INR using the manager-supplied rate, with the same exact
+ * half-even rounding as persistence, so the card shows exactly what gets saved.
+ * Returns null when the amount has >2 decimals or the rate >4 (what the DB stores).
  */
-function toINR(original_amount: number, exchange_rate: number): number {
-  return Math.round(original_amount * exchange_rate * 100) / 100;
+function toINR(original_amount: number, exchange_rate: number): number | null {
+  try {
+    return Number(convertUsdToInrDecimal(original_amount.toString(), exchange_rate.toString()));
+  } catch (err) {
+    if (err instanceof DecimalPrecisionError) return null;
+    throw err;
+  }
 }
 
 // --- Confirmation builder ----------------------------------------------------
@@ -157,6 +164,12 @@ export function buildConfirmation(
   }
 
   const inr_amount = toINR(original_amount, exchange_rate);
+  if (inr_amount === null) {
+    return {
+      ok: false,
+      error: "Use at most 2 decimals for the amount and 4 for the exchange rate.",
+    };
+  }
 
   return {
     ok: true,

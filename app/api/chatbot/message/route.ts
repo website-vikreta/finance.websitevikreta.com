@@ -32,6 +32,8 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server-auth";
+import { withChatState } from "@/lib/chatbot/persistence";
+import { todayInIndia } from "@/lib/transactions/period";
 import { extractTransaction, type ExtractionContext } from "@/lib/chatbot/extract";
 import { mergeDraft } from "@/lib/chatbot/merge";
 import { getDraft, setDraft, getSession, setSession, clearAll } from "@/lib/chatbot/store";
@@ -131,38 +133,38 @@ function buildGreetingResponse(
 
   // No active transaction — fresh welcome
   if (!hasDraft && sessionStatus === "COLLECTING") {
-    return "Hello! 👋 What would you like to record today — income or an expense? 😊";
+    return "Hi! What do you want to record — an income or an expense?";
   }
 
   // Active transaction in COLLECTING with missing fields
   if (sessionStatus === "COLLECTING" && !currentValidation.complete) {
     const fieldHint = currentValidation.question || "the remaining details";
-    return `Hello! 😊 We're still working on your transaction. ${fieldHint}`;
+    return `Hi! ${fieldHint}`;
   }
 
   // Active complete transaction in COLLECTING (shouldn't normally happen, but safe)
   if (sessionStatus === "COLLECTING" && currentValidation.complete) {
-    return "Hello! 😊 I'm here to help with your transaction. We can continue editing it or review the details when you're ready.";
+    return "Hi! Your transaction is ready to review.";
   }
 
   // READY_FOR_CONFIRMATION
   if (sessionStatus === "READY_FOR_CONFIRMATION") {
-    return "Hello! 😊 I'm here to help with your transaction. The details are ready for review — you can confirm, edit, or cancel when you're ready.";
+    return "Hi! Review the summary above: confirm, edit or cancel.";
   }
 
   // AWAITING_EXCHANGE_RATE
   if (sessionStatus === "AWAITING_EXCHANGE_RATE") {
-    return "Hello! 😊 We're almost done. Please provide the USD → INR exchange rate so we can complete your transaction.";
+    return "Hi! What USD → INR rate should I use?";
   }
 
   // Fallback
-  return "Hello! 👋 What would you like to record today — income or an expense? 😊";
+  return "Hi! What do you want to record — an income or an expense?";
 }
 
 // ---------------------------------------------------------------------------
 // POST — send a manager message
 // ---------------------------------------------------------------------------
-export async function POST(req: NextRequest): Promise<NextResponse> {
+async function handlePost(req: NextRequest): Promise<NextResponse> {
   const auth = await requireAuth(req);
   if (!auth.ok) return auth.response;
 
@@ -188,7 +190,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const message = (bodyObj["message"] as string).trim();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInIndia();
 
   // -- Load current state --------------------------------------------------
   const session = getSession(userId);
@@ -204,7 +206,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ok: true,
           status: "AWAITING_EXCHANGE_RATE",
           draft: getDraft(userId),
-          question: "Hello! 😊 We're almost done. Please provide the USD → INR exchange rate (e.g. 88.50) so we can complete your transaction.",
+          question: "Hi! What USD → INR rate should I use? e.g. 88.50",
         },
         { status: 200 },
       );
@@ -219,7 +221,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           status: "AWAITING_EXCHANGE_RATE",
           draft: getDraft(userId),
           question:
-            "What USD → INR rate should I use? Send just the number, e.g. 88.50.",
+            "What USD → INR exchange rate should I use? Send just the number, e.g. 88.50.",
         },
         { status: 200 },
       );
@@ -230,7 +232,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const result = buildConfirmation(draft, rate);
 
     if (!result.ok) {
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+      return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
     }
 
     setSession(userId, {
@@ -340,7 +342,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               required: true,
               transaction,
             },
-            question: "Hello! 😊 I'm here to help with your transaction. The details are ready for review — you can confirm, edit, or cancel when you're ready.",
+            question: "Hi! Review the summary above: confirm, edit or cancel.",
           },
           { status: 200 },
         );
@@ -351,7 +353,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ok: true,
           status: "READY_FOR_CONFIRMATION",
           draft,
-          question: "Hello! 😊 I'm here to help with your transaction. The details are ready for review — you can confirm, edit, or cancel when you're ready.",
+          question: "Hi! Review the summary above: confirm, edit or cancel.",
         },
         { status: 200 },
       );
@@ -367,7 +369,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const result = buildConfirmation(draft, rateEditValue);
 
         if (!result.ok) {
-          return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+          return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
         }
 
         setSession(userId, {
@@ -471,7 +473,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const result = buildConfirmation(existing, rateEditInCollecting);
 
       if (!result.ok) {
-        return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+        return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
       }
 
       setSession(userId, {
@@ -582,7 +584,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const result = buildConfirmation(draft, null);
 
     if (!result.ok) {
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+      return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
     }
 
     setSession(userId, {
@@ -623,7 +625,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (statedRate !== null) {
     const result = buildConfirmation(draft, statedRate);
     if (!result.ok) {
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+      return NextResponse.json({ ok: false, error: result.error }, { status: 400 });
     }
 
     setSession(userId, {
@@ -671,7 +673,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 // ---------------------------------------------------------------------------
 // GET — inspect current draft + session state (no message sent)
 // ---------------------------------------------------------------------------
-export async function GET(req: NextRequest): Promise<NextResponse> {
+async function handleGet(req: NextRequest): Promise<NextResponse> {
   const auth = await requireAuth(req);
   if (!auth.ok) return auth.response;
 
@@ -685,3 +687,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     { status: 200 },
   );
 }
+
+export const POST = withChatState(handlePost);
+export const GET = withChatState(handleGet);
