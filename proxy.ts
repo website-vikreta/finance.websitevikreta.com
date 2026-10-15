@@ -18,13 +18,6 @@ import { verifySession, SESSION_COOKIE } from "@/lib/auth";
  * gate, not the only gate.
  */
 
-/**
- * Paths that do NOT require a session. Checked as prefix matches.
- * /api/auth covers: /api/auth/login (JSON login for Postman) and
- *                   /api/auth/logout (cookie clear).
- */
-const PUBLIC_PREFIXES = ["/login", "/api/auth"];
-
 export async function proxy(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
