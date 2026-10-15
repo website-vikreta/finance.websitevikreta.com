@@ -22,9 +22,6 @@ import { eq, and, sql, isNull } from "drizzle-orm";
 import { getDraft, getSession, setSession, type ChatSessionState } from "@/lib/chatbot/store";
 import { validateExtraction } from "@/lib/chatbot/validate";
 import {
-  parseExactDecimalToBigInt,
-  convertUsdToInrPaise,
-  inrToPaise,
   toMajorDecimal,
   convertUsdToInrDecimal,
   DecimalPrecisionError,
