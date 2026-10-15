@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatINR } from "@/lib/format";
 import { clientSummaries } from "@/lib/transactions/queries";
 
+export const metadata = { title: "Clients" };
+
 async function ClientsData() {
   const clients = await clientSummaries();
   const totalReceived = clients.reduce((s, c) => s + c.totalReceived, 0);

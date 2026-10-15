@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -15,11 +15,18 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+// Icons come from app/favicon.ico, app/icon.svg, app/apple-icon.png and app/opengraph-image.png.
 export const metadata: Metadata = {
-  title: "Finance | Website Vikreta",
+  metadataBase: new URL("https://finance.websitevikreta.com"),
+  title: { default: "Finance | Website Vikreta", template: "%s | Finance | Website Vikreta" },
   description: "Internal income and expense tracker for Website Vikreta managers.",
+  applicationName: "Website Vikreta Finance",
   robots: { index: false, follow: false },
+  openGraph: { title: "Website Vikreta Finance", description: "Internal income and expense tracker for Website Vikreta managers.", siteName: "Website Vikreta", type: "website" },
 };
+
+// White matches the top bar in mobile browser chrome.
+export const viewport: Viewport = { themeColor: "#FFFFFF" };
 
 export default function RootLayout({
   children,
