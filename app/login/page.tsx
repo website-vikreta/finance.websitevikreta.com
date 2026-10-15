@@ -32,13 +32,7 @@ export default function LoginPage() {
         </div>
 
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-12">
-          <p className="text-eyebrow mb-4 text-muted-foreground">
-            Internal finance tracker
-          </p>
-          <h1 className="text-display-sm sm:text-display-md">Clarity for every rupee.</h1>
-          <p className="mt-4 max-w-sm text-body-md text-muted-foreground">
-            Sign in to track income, expenses, and cash flow.
-          </p>
+          <h1 className="text-display-sm">Sign in</h1>
 
           <form
             action={action}
@@ -114,26 +108,12 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-caption text-muted-foreground">
-          Team access only. Ask an admin if you need an account.
-        </p>
+        <p className="text-caption text-muted-foreground">Team access only.</p>
       </section>
 
       <aside className="hidden p-4 lg:block">
         <div className="relative flex min-h-[calc(100dvh-2rem)] rounded-xl bg-primary p-10 text-primary-foreground xl:p-12">
-          <div className="flex max-w-md flex-col">
-            <p className="text-eyebrow">Website Vikreta finance</p>
-            <h2 className="mt-8 text-display-md xl:text-display-lg">
-              Money should feel this clear.
-            </h2>
-            <p className="mt-5 text-body-md">
-              One place to see what came in, what went out, and what is left.
-            </p>
-          </div>
-
-          <p className="absolute bottom-10 left-10 text-caption xl:left-12">
-            Income, expenses, and cash flow in view.
-          </p>
+          <h2 className="text-display-md xl:text-display-lg">Website Vikreta Finance</h2>
         </div>
       </aside>
     </main>

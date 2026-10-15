@@ -6,7 +6,7 @@
  * This route does the same credential check but accepts JSON and returns JSON.
  *
  * Request body:
- *   { "email": "admin@websitevikreta.com", "password": "WVFinance@2026" }
+ *   { "email": "<ADMIN_EMAIL>", "password": "<password>" }
  *
  * Success (200):
  *   { "ok": true }
@@ -16,9 +16,9 @@
  *   { "ok": false, "error": "Email or password is incorrect." }
  */
 
-import { createHash } from "crypto";
 import { type NextRequest, NextResponse } from "next/server";
-import { createSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
+import { createSession, SESSION_COOKIE } from "@/lib/auth";
+import { LOGIN_ERRORS, SESSION_COOKIE_OPTIONS, verifyCredentials } from "@/lib/credentials";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: unknown;
@@ -40,37 +40,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const adminEmail = (process.env.ADMIN_EMAIL ?? "").toLowerCase();
-  const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH ?? "";
-
-  if (!adminEmail || !adminPasswordHash) {
+  const check = verifyCredentials(email, password);
+  if (check !== "ok") {
     return NextResponse.json(
-      { ok: false, error: "Auth is not configured. Check server env vars." },
-      { status: 500 },
-    );
-  }
-
-  const inputHash = createHash("sha256").update(password).digest("hex");
-  const emailMatch = email.trim().toLowerCase() === adminEmail;
-  const passwordMatch = inputHash === adminPasswordHash;
-
-  if (!emailMatch || !passwordMatch) {
-    return NextResponse.json(
-      { ok: false, error: "Email or password is incorrect." },
-      { status: 401 },
+      { ok: false, error: LOGIN_ERRORS[check] },
+      { status: check === "unconfigured" ? 500 : 401 },
     );
   }
 
   const token = await createSession("admin");
 
   const res = NextResponse.json({ ok: true }, { status: 200 });
-  res.cookies.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-    path: "/",
-  });
+  res.cookies.set(SESSION_COOKIE, token, SESSION_COOKIE_OPTIONS);
 
   return res;
 }
