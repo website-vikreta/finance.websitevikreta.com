@@ -3,7 +3,7 @@ import { db, pool } from "./index";
 import * as path from "path";
 
 async function runMigrations() {
-  const migrationsFolder = path.resolve(__dirname, "../../../drizzle");
+  const migrationsFolder = path.resolve(__dirname, "../../drizzle");
   console.log(`Running migrations from: ${migrationsFolder}`);
   await migrate(db, { migrationsFolder });
   console.log("✓ Migrations applied successfully!");
