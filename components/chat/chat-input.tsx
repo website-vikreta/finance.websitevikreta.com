@@ -38,48 +38,37 @@ export function ChatInput({ status, isLoading, onSend }: ChatInputProps) {
 
   const placeholderText =
     status === "AWAITING_EXCHANGE_RATE"
-      ? "Enter USD → INR rate (e.g. 88.50)..."
+      ? "USD → INR rate, e.g. 88.50"
       : status === "READY_FOR_CONFIRMATION"
-        ? "Type 'confirm', 'cancel', or send your correction..."
-        : "Record an income or expense (e.g. Acme paid $500 today)...";
+        ? "Confirm, cancel or correct"
+        : "Message Finance Chat Bot";
 
   return (
     <form onSubmit={handleSubmit} className="shrink-0 border-t border-border bg-card p-3">
       <label htmlFor="finance-ai-input" className="sr-only">
         Message Finance Chat Bot
       </label>
-      <div className="rounded-xl border border-input bg-background/50 p-2 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 transition-colors">
+      <div className="flex items-end gap-2 rounded-xl border border-input bg-background/50 p-1.5 pl-3 transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40">
         <textarea
           ref={textareaRef}
           id="finance-ai-input"
-          rows={2}
+          rows={1}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           placeholder={placeholderText}
-          className="w-full resize-none bg-transparent px-2 py-1 text-body-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+          className="field-sizing-content max-h-32 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-body-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
         />
-
-        <div className="flex items-center justify-between border-t border-border/50 pt-2 px-1">
-          <span className="text-micro font-mono text-muted-foreground">
-            {isLoading ? "Processing..." : "Press Enter ↵ to send"}
-          </span>
-
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!value.trim() || isLoading}
-            aria-label="Send message"
-            className="size-8 rounded-lg"
-          >
-            {isLoading ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-            ) : (
-              <Send className="size-4" aria-hidden />
-            )}
-          </Button>
-        </div>
+        <Button
+          type="submit"
+          size="icon"
+          disabled={!value.trim() || isLoading}
+          aria-label="Send message"
+          className="size-8 shrink-0 rounded-lg"
+        >
+          {isLoading ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Send className="size-4" aria-hidden />}
+        </Button>
       </div>
     </form>
   );
