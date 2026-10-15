@@ -77,37 +77,9 @@ export function formatCurrentHeroDate(date: Date = new Date()): string {
   return `${weekday}, ${day} ${month} · All figures shown in INR unless noted.`;
 }
 
-export type PaymentStatus = "paid" | "due" | "overdue";
-
-export const STATUS_CONFIG: Record<
-  PaymentStatus,
-  {
-    label: string;
-    bgClass: string;
-    textClass: string;
-    borderClass: string;
-    barColor: string;
-  }
-> = {
-  paid: {
-    label: "Paid",
-    bgClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    textClass: "text-emerald-600",
-    borderClass: "border-emerald-500",
-    barColor: "#22C55E",
-  },
-  due: {
-    label: "Due",
-    bgClass: "bg-amber-50 text-amber-800 border-amber-200",
-    textClass: "text-amber-600",
-    borderClass: "border-amber-400",
-    barColor: "#FFD600",
-  },
-  overdue: {
-    label: "Overdue",
-    bgClass: "bg-rose-50 text-rose-700 border-rose-200",
-    textClass: "text-rose-600",
-    borderClass: "border-rose-400",
-    barColor: "#EF4444",
-  },
-};
+/** Share of a total for labels: "<1%" for tiny non-zero parts so they never read as nothing. */
+export function formatShare(part: number, total: number): string {
+  if (total <= 0 || part <= 0) return "0%";
+  const pct = (part / total) * 100;
+  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}
