@@ -6,14 +6,23 @@
 
 ## Current Task
 
+2026-10-15: Real data everywhere + PR #6 port (branch `feat/supabase-real-data`, on top of PR #7 flatten).
+- Dashboard, Transactions, Clients, Reports, Settings read Supabase through `lib/transactions/queries.ts`; `lib/mock-data.ts` deleted. Invoices and Bank connections show `ComingSoon` (no tables yet).
+- CSV export: `GET /api/reports/export?period=month|fy|all` (auth-guarded, formula-injection safe). Navbar Export and Reports/Settings use it.
+- From PR #6 (not merged): stated exchange rate in the same message, contradiction clarification, client-name cleanup (`lib/chatbot/clarify.ts`, 31 checks in `__tests__/clarify.ts`).
+- Chat cards lock after confirm/cancel/replace; pages refresh after a save.
+- DB cleanup: 38 test-suite transactions + 2 test-only clients (Stripe, Zenith Inc) soft-deleted with 40 audit events. The api/integration/persistence suites still write to the live DB; don't run them against production until they get a separate database.
+- Docs moved to the light theme (DESIGN.md rewritten, design-system.md, brand.md, AGENTS.md, learning.md).
+
+
 2026-10-09: Chatbot Phases 4+5 complete.
 - Phase 4: currency processing — INR direct, USD via manager-entered rate (`parseExchangeRate` + `buildConfirmation`)
 - Phase 5: confirmation state machine — `COLLECTING → AWAITING_EXCHANGE_RATE → READY_FOR_CONFIRMATION → CONFIRMED/CANCELLED`
-- `src/lib/chatbot/confirm.ts` — pure Phase 4+5 logic (no side-effects)
-- `src/lib/chatbot/store.ts` — `ChatStatus`, `ChatSessionState`, `getSession`, `setSession`, `clearAll` (was already scaffolded)
-- `src/app/api/chatbot/message/route.ts` — now routes through Phase 4+5 after validation.complete
-- `src/app/api/chatbot/confirm/route.ts` — NEW: CONFIRM / CANCEL / EDIT endpoint
-- `src/app/api/chatbot/reset/route.ts` — updated to call `clearAll()` (atomic draft+session reset)
+- `lib/chatbot/confirm.ts` — pure Phase 4+5 logic (no side-effects)
+- `lib/chatbot/store.ts` — `ChatStatus`, `ChatSessionState`, `getSession`, `setSession`, `clearAll` (was already scaffolded)
+- `app/api/chatbot/message/route.ts` — now routes through Phase 4+5 after validation.complete
+- `app/api/chatbot/confirm/route.ts` — NEW: CONFIRM / CANCEL / EDIT endpoint
+- `app/api/chatbot/reset/route.ts` — updated to call `clearAll()` (atomic draft+session reset)
 
 **Verification (2026-10-09):**
 - TypeScript: 0 errors (`npx tsc --noEmit`)
@@ -23,13 +32,13 @@
 - State hygiene fix: Added auto-reset on `CONFIRMED` in `message/route.ts` to prevent old transaction data bleeding into new manager transactions, plus conversational `confirm` / `cancel` keyword support.
 
 2026-10-10: End-to-End Frontend Chatbot Integration complete.
-- Connected FinanceAIDrawer (`src/components/chat/finance-ai-drawer.tsx`) to chatbot APIs (`/api/chatbot/message`, `/api/chatbot/confirm`, `/api/chatbot/reset`).
+- Connected FinanceAIDrawer (`components/chat/finance-ai-drawer.tsx`) to chatbot APIs (`/api/chatbot/message`, `/api/chatbot/confirm`, `/api/chatbot/reset`).
 - Created modular chat components:
-  - `src/components/chat/types.ts`: Strongly typed API and message structures.
-  - `src/components/chat/chat-api.ts`: Typed fetch helper with 401, 400, 429, 500 error handling.
-  - `src/components/chat/transaction-summary-card.tsx`: Transaction review, exchange rate display, and explicit confirmation controls.
-  - `src/components/chat/chat-message-list.tsx`: Chat bubble thread, typing indicators, retry action.
-  - `src/components/chat/chat-input.tsx`: Responsive textarea with Enter-key submit and loading guards.
+  - `components/chat/types.ts`: Strongly typed API and message structures.
+  - `components/chat/chat-api.ts`: Typed fetch helper with 401, 400, 429, 500 error handling.
+  - `components/chat/transaction-summary-card.tsx`: Transaction review, exchange rate display, and explicit confirmation controls.
+  - `components/chat/chat-message-list.tsx`: Chat bubble thread, typing indicators, retry action.
+  - `components/chat/chat-input.tsx`: Responsive textarea with Enter-key submit and loading guards.
 - Preserved server-side multi-turn conversation state & draft isolation.
 - Verified with 45/45 E2E tests (`chat-integration-e2e.ts`), 37/37 API flow tests, 63/63 regression tests, 41/41 unit tests, clean ESLint, clean TypeScript (`npx tsc --noEmit`), and production build (`npm run build`).
 
@@ -48,7 +57,7 @@
 - Verified: `npm run typecheck` (0 errors), `npm test` (all 186 automated test assertions across regression, phase4/5, api-flow, and integration suites pass).
 
 2026-10-12: Phase 6 — PostgreSQL Confirmation Persistence complete.
-- Shared persistence service: `src/lib/transactions/persist.ts` (re-exported via `src/lib/chatbot/persist.ts`).
+- Shared persistence service: `lib/transactions/persist.ts` (re-exported via `lib/chatbot/persist.ts`).
 - Connected both explicit confirmation entry points:
   1. `POST /api/chatbot/confirm` (`action === "CONFIRM"`)
   2. `POST /api/chatbot/message` (conversational `"confirm"` / `"yes"`)
@@ -74,8 +83,8 @@
 
 ## Locked Decisions
 
-- Visual system: `DESIGN.md` (ClickHouse). Dark only. `#faff69` primary. Inter + JetBrains Mono. NOT the main Vikreta brand.
-- UI kit: shadcn/ui, style `base-nova`, Base UI primitives, lucide icons. Components live in `src/components/ui/`.
+- Visual system: `DESIGN.md` (light Website Vikreta finance theme). Light only. `#FFD600` primary on `#F8F8F4` canvas, white cards. Inter + JetBrains Mono. Rewritten 2026-10-15 to match the live UI (the ClickHouse dark spec is retired).
+- UI kit: shadcn/ui, style `base-nova`, Base UI primitives, lucide icons. Components live in `components/ui/`.
 - Framework: Next.js 16 App Router, React 19, Tailwind v4, TypeScript strict.
 - INR is the base currency. All analytics use `inr_amount`.
 - Rate is stored per transaction and never recalculated.
@@ -88,9 +97,9 @@
 ## Latest completed work
 
 2026-10-10: Login UI refreshed from the supplied Figma reference.
-- `src/app/login/page.tsx` now uses a responsive split layout: branded sign-in form on the left and a desktop-only finance panel on the right.
+- `app/login/page.tsx` now uses a responsive split layout: branded sign-in form on the left and a desktop-only finance panel on the right.
 - Preserved the existing `loginAction`, hardcoded environment-backed credentials, session cookie flow, and `/dashboard` redirect.
-- Verified with `npx eslint src/app/login/page.tsx`, `npx tsc --noEmit`, and a live `GET /login` response (200).
+- Verified with `npx eslint app/login/page.tsx`, `npx tsc --noEmit`, and a live `GET /login` response (200).
 
 2026-10-10: Route, image, and dashboard UI repair.
 - `npm run dev` now serves the requested `http://localhost:3030` address.
@@ -101,11 +110,11 @@
 
 2026-10-10: Chatbot Docking Layout (VS Code Secondary Sidebar behavior).
 - Fixed issue where the chatbot panel floated over and obscured the dashboard and cards on desktop/laptop displays.
-- Converted `FinanceAIDrawer` (`src/components/chat/finance-ai-drawer.tsx`) to dock inside the layout flow beside `<main>` on desktop (`md:` and up), matching VS Code's side panel behavior.
-- Updated `AppShell` (`src/components/layout/app-shell.tsx`) so that `<main>` automatically resizes horizontally to fit beside the docked chatbot across all menu pages (`/dashboard`, `/transactions`, `/invoices`, `/clients`, `/reports`, `/bank-connections`, `/settings`).
+- Converted `FinanceAIDrawer` (`components/chat/finance-ai-drawer.tsx`) to dock inside the layout flow beside `<main>` on desktop (`md:` and up), matching VS Code's side panel behavior.
+- Updated `AppShell` (`components/layout/app-shell.tsx`) so that `<main>` automatically resizes horizontally to fit beside the docked chatbot across all menu pages (`/dashboard`, `/transactions`, `/invoices`, `/clients`, `/reports`, `/bank-connections`, `/settings`).
 - Added smooth width transitions, persistent chat session state across toggles, and auto-collapsed sidebar support on narrow desktop/tablet screens (< 1024px).
 - Maintained mobile slide-over with backdrop overlay on screens < 768px.
-- Configured root URL (`/`) in `src/app/page.tsx` to redirect to `/login` first; successful login redirects to `/dashboard` from which all pages are accessible.
+- Configured root URL (`/`) in `app/page.tsx` to redirect to `/login` first; successful login redirects to `/dashboard` from which all pages are accessible.
 - Zero backend changes; verified with clean `npx tsc --noEmit` and `npm run build`.
 
 ## In Progress
@@ -119,7 +128,7 @@
 
 ## Open Questions
 
-- SRS says monorepo + npm workspaces (`apps/web`, `packages/*`). This repo is a single Next.js app at the root. Convert before backend work starts, or keep single-app with `src/lib/*` folders? **Ask before restructuring.**
+- Layout: flattened to a single Next.js app at the repo root (no `apps/`, no `src/`), matching the main websitevikreta.com repo. Decided 2026-10-15.
 - Database: MongoDB (SRS base plan) or another DB? (SRS open question)
 - Exchange-rate source? (SRS open question)
 - Expenses in USD too, or INR only? (SRS open question)
@@ -135,4 +144,4 @@ _None yet_
 
 <!-- Reusable components finalized and not to be changed without updating learning.md -->
 
-- `src/components/ui/*` — shadcn primitives, themed via tokens. Edit only for token/size alignment with DESIGN.md; log every edit in `learning.md`.
+- `components/ui/*` — shadcn primitives, themed via tokens. Edit only for token/size alignment with DESIGN.md; log every edit in `learning.md`.

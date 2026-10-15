@@ -1,11 +1,11 @@
 # Finance Tool
 
-Internal finance tracker for Website Vikreta managers. The Next.js application lives in the `@finance/web` npm workspace at `apps/web`.
+Internal finance tracker for Website Vikreta managers. A single Next.js app at the repository root (same flat layout as the main websitevikreta.com repo).
 
 ## Requirements
 
 - Node.js and npm compatible with the checked-in `package-lock.json`
-- A local environment file at `apps/web/.env.local`; use `apps/web/.env.example` as the non-secret template
+- A local environment file at `.env.local`; use `.env.example` as the non-secret template
 
 ## Commands
 
@@ -23,15 +23,19 @@ npm run test
 
 `npm run dev` starts the web app on `http://localhost:3030`. The test command runs the existing offline chatbot regression, phase, API-flow, and integration suites. The live Gemini probe remains opt-in and is not part of the standard test command.
 
-## Workspace layout
+## Layout
 
 ```text
-apps/web/       Next.js application, UI, API route handlers, tests, and environment template
-packages/       Reserved for future genuine shared packages
+app/          Routes, layouts, route handlers (app/api/*)
+components/   UI: shadcn primitives (ui/), layout shell, feature components
+lib/          Auth, chatbot, currency, db (Drizzle), transactions, utils
+drizzle/      SQL migrations
+public/       Static assets
+proxy.ts      Route guard
 ```
 
-There is one lockfile at the repository root. Install dependencies from the root; do not create per-workspace lockfiles.
+The `@/*` import alias maps to the repository root.
 
 ## Deployment
 
-No deployment or CI configuration is present in this repository. If a platform is configured externally, set its application root directory to `apps/web` and provide the existing environment variables there. No production settings were changed by this migration.
+No deployment or CI configuration is present in this repository. If a platform is configured externally, leave its root directory as the repository root and provide the existing environment variables there. No production settings were changed by this migration.
