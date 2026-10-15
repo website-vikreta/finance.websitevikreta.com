@@ -36,8 +36,11 @@
 ⚠️ shadcn's `accent` is the **hover fill**, not the brand accent. The brand accent is `primary`.
 ⚠️ `--surface-elevated` is white like the card. Never use it as a chart series or anything that must show up on a card.
 
-### Chart colors
-Income-vs-expense charts use `bg-income` / `bg-expense`. Other series: `--chart-1` #FFD600 · `--chart-2` #CBD5E1 · `--chart-3` #94A3B8 · `--chart-4` #64748B · `--chart-5` #334155. Load the `dataviz` skill before building a new chart.
+### Chart colors (validated with the dataviz palette checker)
+- Charts use **recharts** (client components in `components/dashboard/`). Colors come from CSS vars, never hex in components.
+- Income vs expenses: `var(--income)` `#EDA100` and `var(--expense)` `#64748B` (CVD ΔE 24, normal ΔE 29). Brand `#FFD600` is too light for 2px lines on white (1.4:1), so charts use the deeper yellow. Same tokens as `bg-income` / `bg-expense` for share bars.
+- Part-to-whole (donuts): fixed slot order `--chart-1` blue `#2A78D6`, `--chart-2` orange `#EB6834`, `--chart-3` aqua `#1BAF7A`, `--chart-4` yellow `#EDA100`, `--chart-5` magenta `#E87BA4`; the 6th+ fold into "Other" `--chart-other` `#52514E` (deliberate neutral). Never generate extra hues.
+- Rules: a donut only for 3–6 parts (top 5 + Other), otherwise share bars; 2px card-colored gap between slices; total in the centre; a legend with ₹ and % beside it (doubles as the table view); hover tooltip on every chart; one y-axis only; controls (range, chart type) in one row above the plot.
 
 ## Typography → Classes
 Each class sets size, line-height, tracking and weight together. Don't add `font-bold` / `tracking-*` on top.
@@ -52,7 +55,7 @@ Each class sets size, line-height, tracking and weight together. Don't add `font
 | `body-md` | `text-body-md` | 16/1.55 | Long running text |
 | `body-sm` | `text-body-sm` | 14/1.55 | Tables, descriptions (UI default) |
 | `caption` | `text-caption` | 13/1.4, 500 | Badges, meta, table footers |
-| `eyebrow` | `text-eyebrow` | 12/1.4, 1.5px, 600 | Stat labels, table header cells (write the copy in caps) |
+| `eyebrow` | `text-eyebrow` | 12/1.4, 1.5px, 600 | Not used. No eyebrow labels above headings; stat labels and table headers use `text-caption` in sentence case |
 | `micro` | `text-micro` | 11/1.4, 500 | Chat timestamps, tiny status badges. Nothing else |
 
 `text-display-xl`, `text-display-lg` and `text-stat` exist in `globals.css` but aren't used in-app; prefer the sizes above.
@@ -106,6 +109,9 @@ No drop shadows on cards. `shadow-xs` only on the active item of a segmented fil
 | Icon-only button | `<Button variant="ghost" size="icon">` (`icon-lg` in the navbar) |
 | Chat quick actions | `QuickActions` in `chat-message-list.tsx` (outline, `size="sm"`, `rounded-full`) |
 | Data table | `components/transactions/ledger-table.tsx` pattern |
+| Form in a dialog | `components/transactions/transaction-form-dialog.tsx`: `Dialog` + `Label`/`Input`, segmented `Choice` for enums, inline `role="alert"` error, footer Cancel (outline) + submit (primary) |
+| Destructive confirm | `components/transactions/delete-transaction-dialog.tsx`: title names the item and date, says what happens and that it can be restored; buttons "Keep it" / "Delete" (`variant="destructive"`) |
+| Row actions | Ghost `size="icon-sm"` buttons with an `aria-label` naming the row |
 | KPI | `components/dashboard/kpi-card.tsx` |
 | Loading | `Skeleton` in the `<Suspense>` fallback, same shape as the content |
 | Module without a backend | `components/layout/coming-soon.tsx` |
@@ -125,3 +131,5 @@ No drop shadows on cards. `shadow-xs` only on the active item of a segmented fil
 - Never show invented figures; empty and roadmap states say what's true.
 - No dot patterns, textures, illustrations or decorative shapes (ClickHouse discipline). Never `text-[Npx]`; use a type token.
 - No shadows on cards or chat bubbles.
+- No eyebrows, taglines or explainer paragraphs. A page is a title plus data; descriptions only when they prevent a mistake (e.g. the delete dialog). Labels are short and sentence case ("Money in · October", not "MONEY IN · THIS MONTH").
+- One control per action: the chat opens from the floating bottom-right button only; the top bar holds Export.
