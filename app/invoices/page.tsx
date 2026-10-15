@@ -6,13 +6,7 @@ import { INVOICES, type Invoice } from "@/lib/mock-data";
 import { formatINR, STATUS_CONFIG } from "@/lib/format";
 import {
   Plus,
-  FileText,
-  CheckCircle,
-  Clock,
-  AlertCircle,
-  Eye,
   Send,
-  Download,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
