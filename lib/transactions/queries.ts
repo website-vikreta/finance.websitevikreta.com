@@ -20,6 +20,8 @@ export type TxnType = "income" | "expense";
 export interface LedgerRow {
   id: string;
   date: string;
+  /** When it was entered, HH:MM in India time (txn date itself has no time). */
+  time: string;
   type: TxnType;
   /** Client name for income, expense description for expenses. */
   title: string;
@@ -87,6 +89,7 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
   const data = await rows<{
     id: string;
     date: string;
+    time: string;
     type_id: number;
     title: string;
     detail: string | null;
@@ -99,6 +102,7 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
   }>(sql`
     SELECT t.id,
            to_char(t.txn_date, 'YYYY-MM-DD') AS date,
+           to_char(t.created_at AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS time,
            t.type_id,
            CASE WHEN t.type_id = ${INCOME}
                 THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
@@ -116,6 +120,7 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
   return data.map((r) => ({
     id: r.id,
     date: r.date,
+    time: r.time,
     type: r.type_id === INCOME ? "income" : "expense",
     title: r.title,
     detail: r.detail,

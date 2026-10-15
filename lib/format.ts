@@ -64,6 +64,12 @@ export function formatDate(ymd: string): string {
   });
 }
 
+/** "13:43" -> "1:43 pm" */
+export function formatTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "pm" : "am"}`;
+}
+
 /** Percent change from `previous` to `current`, or null when there is no baseline. */
 export function percentChange(current: number, previous: number): number | null {
   if (previous === 0) return null;
