@@ -19,9 +19,10 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server-auth";
+import { withChatState } from "@/lib/chatbot/persistence";
 import { clearAll } from "@/lib/chatbot/store";
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+async function handlePost(req: NextRequest): Promise<NextResponse> {
   const auth = await requireAuth(req);
   if (!auth.ok) return auth.response;
 
@@ -29,3 +30,5 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json({ ok: true, message: "Draft cleared." }, { status: 200 });
 }
+
+export const POST = withChatState(handlePost);

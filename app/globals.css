@@ -40,6 +40,7 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-other: var(--chart-other);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -159,15 +160,20 @@
   --success: #22C55E;
   --warning: #F59E0B;
   --info: #3B82F6;
-  --income: #FFD600;
-  --expense: #CBD5E1;
+  /* Chart series. Validated with the dataviz palette checker (CVD ΔE 24, normal ΔE 29).
+     Brand #FFD600 is too light for 2px lines on white (1.4:1), so income uses a deeper yellow. */
+  --income: #EDA100;
+  --expense: #64748B;
 
   /* Charts: Yellow for Income, Light Grey for Expenses */
-  --chart-1: #FFD600;
-  --chart-2: #CBD5E1;
-  --chart-3: #94A3B8;
-  --chart-4: #64748B;
-  --chart-5: #334155;
+  /* Categorical slots for part-to-whole charts (donuts), fixed order, validated as a ring.
+     "Other" is a deliberate neutral, not a sixth identity. */
+  --chart-1: #2A78D6;
+  --chart-2: #EB6834;
+  --chart-3: #1BAF7A;
+  --chart-4: #EDA100;
+  --chart-5: #E87BA4;
+  --chart-other: #52514E;
 
   --radius: 12px;
 

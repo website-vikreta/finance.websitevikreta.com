@@ -101,7 +101,7 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 
 ### [Data] — Explicit Confirmation PostgreSQL Persistence & Atomicity
 - Rule: Transactions are persisted ONLY upon explicit manager confirmation (`POST /api/chatbot/confirm` or conversational `confirm`). Pre-confirmation actions (extraction, clarifications, editing, cancellation) are strictly database-write-free. Transaction insert, client resolution/creation (for income), and immutable audit event run inside a single PostgreSQL transaction. Idempotency enforced via stable key and canonical payload SHA-256 hash. Banker's Rounding (Half-Even) and exact BigInt minor units via `precision.ts`.
-- Where: `lib/transactions/persist.ts`, `lib/chatbot/persist.ts`, `app/api/chatbot/confirm/route.ts`, `app/api/chatbot/message/route.ts`
+- Where: `lib/transactions/persist.ts`, `app/api/chatbot/confirm/route.ts`, `app/api/chatbot/message/route.ts`
 - Why: Guarantees zero phantom writes, zero silent mutations, exact integer arithmetic, and robust duplicate protection.
 - Date: 2026-10-12
 
@@ -164,3 +164,37 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 - Why: User wants the ClickHouse rules (one accent, flat, no decoration) applied consistently while keeping the light theme; no dark mode for now. `.bg-dot-pattern` and the two brand illustration PNGs were removed.
 - Date: 2026-10-15
 
+
+### [Money] — One USD→INR conversion: exact half-even
+- Rule: Anything that shows or saves an INR amount converts through `convertUsdToInrDecimal` (`lib/currency/precision.ts`). `buildConfirmation` uses it, so the confirmation card shows exactly what `persist.ts` saves. Amounts max 2 decimals, rates max 4; anything finer is rejected with a 400, not rounded silently.
+- Why: The card used float half-up while persistence used half-even; they disagreed on 23,266 of ~360k sampled amount/rate pairs (e.g. $1 @ 80.025 → card ₹80.03, saved ₹80.02). `lib/currency/convert.ts` and `lib/chatbot/confirmation.ts` were unused duplicates and were deleted.
+- Date: 2026-10-15
+
+### [Auth] — One credential check, no secrets in code
+- Rule: Login form and JSON login both call `verifyCredentials` (`lib/credentials.ts`, constant-time compare) and set `SESSION_COOKIE_OPTIONS`. Never write real emails/passwords in code, comments, docs or tests; use placeholders like `<ADMIN_EMAIL>`.
+- Why: The live admin password sat in a doc comment in `app/api/auth/login/route.ts` (committed 2026-10-13).
+- Date: 2026-10-15
+
+### [Data] — Manual entry, edit and delete share the chat's persistence rules
+- Rule: Manual create goes through `confirmAndPersistTransaction` with `source: "manual"` (never touches the chat session). Edit and delete live in `lib/transactions/manage.ts`; both run in one DB transaction with an audit event (`updated` with before/after, `deleted`). Money via `computeAmounts`, clients via `resolveClientId` (both exported from `persist.ts`). Form input is untrusted: `toDraft` validates it server-side. A per-form `requestId` makes double submits idempotent.
+- Where: `app/transactions/actions.ts` (Server Actions, `requireAuthAction` + UUID checks, `refresh()` on success), `components/transactions/*`
+- Date: 2026-10-15
+
+### [Data] — Error pages and startup env check
+- Rule: `app/error.tsx` (inside `AppShell`, Next 16 `retry()` prop, shows `error.digest` as a reference), `app/not-found.tsx` (inside the shell), `app/global-error.tsx` (own `<html>`/`<body>`, imports `globals.css`). `instrumentation.ts` runs `envProblems()` (`lib/env.ts`) on server start and refuses to boot with a missing or malformed DATABASE_URL, JWT_SECRET (≥32 chars), ADMIN_EMAIL, ADMIN_PASSWORD_HASH (64 hex) or GEMINI_API_KEY. Only names are reported, never values.
+- Date: 2026-10-15
+
+### [Data] — Delete is undoable
+- Rule: Deleting shows a toast with Undo; the Transactions page lists "Recently deleted" (last 30 days, deleted through the app) with Restore. Restore writes a `restored` audit event and re-links income to an active client by name. Maintenance deletions (audit `metadata.reason`, e.g. test-suite cleanup) are not offered for restore.
+- Where: `lib/transactions/manage.ts` (`restoreTransaction`), `lib/transactions/queries.ts` (`listDeleted`), `components/transactions/recently-deleted.tsx`, `restore-toast.ts`
+- Date: 2026-10-15
+
+### [Copy] — Title plus data, nothing else
+- Rule: No eyebrows, taglines, hero cards or explainer lines. `PageHeader` description is optional and unused on all pages; the dashboard puts the month on its labels instead ("Money in · October"). Chat greetings are one plain sentence, no emoji. Only one way to open the chat (floating button).
+- Why: User flagged "Finance overview", "Your money. Clearly managed." and "Ask, review, and approve…" as AI slop (2026-10-15).
+- Date: 2026-10-15
+
+### [Component] — Dashboard charts (recharts)
+- Rule: `TrendChart` (income vs expenses, 3/6/12M + Bars/Lines/Area, crosshair tooltip), `BreakdownDonut` (top 5 + Other, falls back to share bars under 3 parts, legend with ₹ and %), `RecentTransactions` (last 5). Data stays server-side; charts are thin client components receiving rows.
+- Why: Dashboard should answer "how much in, where it went, who paid" without leaving the page. Palette validated with the dataviz checker; see design-system.md → Chart colors.
+- Date: 2026-10-15

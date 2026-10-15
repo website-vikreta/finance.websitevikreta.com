@@ -23,9 +23,16 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server-auth";
+import { todayInIndia } from "@/lib/transactions/period";
 import { extractTransaction } from "@/lib/chatbot/extract";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Development/test-only endpoint: the UI never calls it, and in production it would
+  // let any signed-in user make raw Gemini calls.
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ ok: false, error: "Not found." }, { status: 404 });
+  }
+
   // Defense-in-depth: verify session inside the handler too.
   // Next.js 16 docs: "Always verify auth inside each route handler —
   // proxy is the first gate, not the only gate."
@@ -64,7 +71,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // Today's date in YYYY-MM-DD (server local is IST, use UTC for consistency)
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInIndia();
 
   const result = await extractTransaction(message, today);
 

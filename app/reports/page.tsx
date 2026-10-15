@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { Download } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
@@ -50,6 +51,7 @@ function BreakdownCard({ title, items, empty, barClass }: { title: string; items
 }
 
 async function ReportData({ period }: { period: Period }) {
+  await connection(); // periodStart reads the current date, so this runs at request time
   const from = periodStart(period);
   const [income, expenses, months] = await Promise.all([incomeBreakdown(from), expenseBreakdown(from), monthlyTotals(12)]);
   const totalIn = income.reduce((s, i) => s + i.amount, 0);
@@ -59,14 +61,14 @@ async function ReportData({ period }: { period: Period }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <StatTile label="INCOME" value={formatINR(totalIn)} note={`${income.reduce((s, i) => s + i.count, 0)} payments`} />
-        <StatTile label="EXPENSES" value={formatINR(totalOut)} note={`${expenses.reduce((s, i) => s + i.count, 0)} entries`} />
-        <StatTile label="NET PROFIT" value={formatINR(net)} note={margin} />
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-3">
+        <StatTile label="Income" value={formatINR(totalIn)} note={`${income.reduce((s, i) => s + i.count, 0)} payments`} />
+        <StatTile label="Expenses" value={formatINR(totalOut)} note={`${expenses.reduce((s, i) => s + i.count, 0)} entries`} />
+        <StatTile label="Net profit" value={formatINR(net)} note={margin} />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <BreakdownCard title="Income by client" items={income} empty="No income recorded in this period." barClass="bg-primary" />
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
+        <BreakdownCard title="Income by client" items={income} empty="No income recorded in this period." barClass="bg-income" />
         <BreakdownCard title="Expenses by description" items={expenses} empty="No expenses recorded in this period." barClass="bg-expense" />
       </div>
 
@@ -75,7 +77,7 @@ async function ReportData({ period }: { period: Period }) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[480px] text-body-sm">
             <thead className="bg-muted/60">
-              <tr className="text-eyebrow text-muted-foreground">
+              <tr className="text-caption text-muted-foreground">
                 <th scope="col" className="px-6 py-3 text-left font-semibold">Month</th>
                 <th scope="col" className="px-6 py-3 text-right font-semibold">Income</th>
                 <th scope="col" className="px-6 py-3 text-right font-semibold">Expenses</th>
@@ -109,7 +111,7 @@ async function Report({ searchParams }: { searchParams: Promise<Record<string, s
 
   return (
     <>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between">
         <nav aria-label="Report period" className={segmentedTrack}>
           {(Object.keys(PERIODS) as Period[]).map((p) => (
             <Link
@@ -140,10 +142,10 @@ async function Report({ searchParams }: { searchParams: Promise<Record<string, s
 function ReportSkeleton() {
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-3">
         {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
       </div>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
         <Skeleton className="h-72 rounded-xl" />
         <Skeleton className="h-72 rounded-xl" />
       </div>
@@ -154,7 +156,7 @@ function ReportSkeleton() {
 export default function ReportsPage({ searchParams }: PageProps<"/reports">) {
   return (
     <AppShell>
-      <PageHeader title="Reports" description="Profit and loss from confirmed transactions. Financial year runs April to March." />
+      <PageHeader title="Reports" />
       <Suspense fallback={<ReportSkeleton />}>
         <Report searchParams={searchParams} />
       </Suspense>

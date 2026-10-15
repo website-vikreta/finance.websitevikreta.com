@@ -57,7 +57,7 @@
 - Verified: `npm run typecheck` (0 errors), `npm test` (all 186 automated test assertions across regression, phase4/5, api-flow, and integration suites pass).
 
 2026-10-12: Phase 6 — PostgreSQL Confirmation Persistence complete.
-- Shared persistence service: `lib/transactions/persist.ts` (re-exported via `lib/chatbot/persist.ts`).
+- Shared persistence service: `lib/transactions/persist.ts`.
 - Connected both explicit confirmation entry points:
   1. `POST /api/chatbot/confirm` (`action === "CONFIRM"`)
   2. `POST /api/chatbot/message` (conversational `"confirm"` / `"yes"`)

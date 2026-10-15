@@ -53,7 +53,7 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
           type="button"
           aria-label="Close Finance Chat Bot overlay"
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-foreground/40 md:hidden"
+          className="fixed inset-0 z-40 bg-foreground/40 xl:hidden"
         />
       ) : null}
 
@@ -61,11 +61,11 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
         aria-label="Finance Chat Bot Assistant"
         className={cn(
           "flex flex-col border-border bg-card transition-[transform,opacity] duration-200 ease-in-out",
-          "fixed inset-y-16 right-0 z-50 w-full sm:w-[380px] shadow-2xl",
-          "md:static md:z-auto md:h-full md:min-h-0 md:shrink-0 md:shadow-none",
+          "fixed top-16 bottom-0 right-0 z-50 w-full sm:w-[400px] shadow-2xl",
+          "xl:static xl:z-auto xl:h-full xl:min-h-0 xl:shrink-0 xl:shadow-none",
           isOpen
-            ? "translate-x-0 border-l opacity-100 md:w-[var(--chat-panel-width,380px)]"
-            : "pointer-events-none translate-x-full overflow-hidden border-l-0 opacity-0 md:w-0 md:translate-x-0"
+            ? "translate-x-0 border-l opacity-100 xl:w-[var(--chat-panel-width,380px)]"
+            : "pointer-events-none translate-x-full overflow-hidden border-l-0 opacity-0 xl:w-0 xl:translate-x-0"
         )}
         style={isOpen ? { '--chat-panel-width': `${panelWidth}px` } as React.CSSProperties : undefined}
       >
@@ -81,16 +81,13 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
                 <div className="flex items-center gap-2">
                   <h2 className="text-title-sm font-semibold text-foreground truncate">Finance Chat Bot</h2>
                   {status === "READY_FOR_CONFIRMATION" ? (
-                    <Badge variant="outline" className="border-primary/40 bg-primary/10 px-1.5 py-0 text-micro font-medium text-primary shrink-0">Review Pending</Badge>
+                    <Badge variant="outline" className="border-primary/40 bg-primary/10 px-1.5 py-0 text-micro font-medium text-primary shrink-0">Review pending</Badge>
                   ) : status === "AWAITING_EXCHANGE_RATE" ? (
-                    <Badge variant="outline" className="border-warning/40 bg-warning/10 px-1.5 py-0 text-micro font-medium text-warning shrink-0">Rate Required</Badge>
+                    <Badge variant="outline" className="border-warning/40 bg-warning/10 px-1.5 py-0 text-micro font-medium text-warning shrink-0">Rate required</Badge>
                   ) : status === "CONFIRMED" ? (
                     <Badge variant="outline" className="border-success/40 bg-success/10 px-1.5 py-0 text-micro font-medium text-success shrink-0">Confirmed</Badge>
-                  ) : (
-                    <span className="font-mono text-micro text-muted-foreground shrink-0">v0.1</span>
-                  )}
+                  ) : null}
                 </div>
-                <p className="text-caption text-muted-foreground truncate">Record &amp; track transactions in INR / USD</p>
               </div>
             </div>
 

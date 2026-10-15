@@ -48,12 +48,13 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server-auth";
+import { withChatState } from "@/lib/chatbot/persistence";
 import { getDraft, setSession, clearAll } from "@/lib/chatbot/store";
 import { confirmAndPersistTransaction } from "@/lib/transactions/persist";
 
 const VALID_ACTIONS = new Set(["CONFIRM", "CANCEL", "EDIT"]);
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+async function handlePost(req: NextRequest): Promise<NextResponse> {
   const auth = await requireAuth(req);
   if (!auth.ok) return auth.response;
 
@@ -142,3 +143,5 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     { status: 200 },
   );
 }
+
+export const POST = withChatState(handlePost);

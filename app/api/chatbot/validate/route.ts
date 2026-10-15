@@ -40,10 +40,17 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/server-auth";
+import { todayInIndia } from "@/lib/transactions/period";
 import { extractTransaction, type ExtractionResult } from "@/lib/chatbot/extract";
 import { validateExtraction } from "@/lib/chatbot/validate";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Development/test-only endpoint: the UI never calls it, and in production it would
+  // let any signed-in user make raw Gemini calls.
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ ok: false, error: "Not found." }, { status: 404 });
+  }
+
   // Defense-in-depth auth check inside the handler.
   const auth = await requireAuth(req);
   if (!auth.ok) return auth.response;
@@ -83,7 +90,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayInIndia();
     const extractResult = await extractTransaction(message, today);
 
     if (!extractResult.ok) {

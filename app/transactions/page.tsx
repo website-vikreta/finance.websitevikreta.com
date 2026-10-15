@@ -3,12 +3,18 @@ import { AppShell } from "@/components/layout/app-shell";
 import { NewTransactionButton } from "@/components/layout/new-transaction-button";
 import { PageHeader } from "@/components/layout/page-header";
 import { LedgerTable } from "@/components/transactions/ledger-table";
+import { RecentlyDeleted } from "@/components/transactions/recently-deleted";
 import { Skeleton } from "@/components/ui/skeleton";
-import { listLedger } from "@/lib/transactions/queries";
+import { listDeleted, listLedger } from "@/lib/transactions/queries";
 
 async function Ledger() {
-  const rows = await listLedger();
-  return <LedgerTable rows={rows} />;
+  const [rows, deleted] = await Promise.all([listLedger(), listDeleted()]);
+  return (
+    <>
+      <LedgerTable rows={rows} />
+      <RecentlyDeleted rows={deleted} />
+    </>
+  );
 }
 
 export default function TransactionsPage() {
@@ -16,7 +22,6 @@ export default function TransactionsPage() {
     <AppShell>
       <PageHeader
         title="Transactions"
-        description="Every confirmed income and expense, newest first. Amounts in INR."
         action={<NewTransactionButton />}
       />
       <Suspense

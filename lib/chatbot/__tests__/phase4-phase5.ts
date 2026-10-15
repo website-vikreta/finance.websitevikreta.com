@@ -6,12 +6,11 @@
  *
  * Uses the same hand-rolled harness pattern as regression.ts.
  *
- * Run:  npx tsx src/lib/chatbot/__tests__/phase4-phase5.ts
+ * Run:  npx tsx lib/chatbot/__tests__/phase4-phase5.ts
  * Exit code 0 = all pass. Non-zero = failures.
  */
 
-import { convertToINR, CurrencyConversionError } from '../../currency/convert';
-import { buildConfirmationTransaction, ConfirmationBuildError } from '../confirmation';
+import { buildConfirmation } from '../confirm';
 import { getSession, setSession, clearSession } from '../store';
 import { mergeDraft, EMPTY_DRAFT } from '../merge';
 import { validateExtraction } from '../validate';
@@ -35,22 +34,6 @@ function assert(label: string, actual: unknown, expected: unknown) {
   }
 }
 
-function assertThrows(label: string, fn: () => unknown, errorClass: { new(...args: never[]): Error }) {
-  try {
-    fn();
-    console.error(`  ❌  ${label} — expected throw but did not throw`);
-    failed++;
-  } catch (err) {
-    if (err instanceof errorClass) {
-      console.log(`  ✅  ${label}`);
-      passed++;
-    } else {
-      console.error(`  ❌  ${label} — threw wrong error: ${String(err)}`);
-      failed++;
-    }
-  }
-}
-
 function section(name: string) {
   console.log(`\n── ${name} ──`);
 }
@@ -61,11 +44,17 @@ function draft(partial: Partial<ExtractionResult>): ExtractionResult {
   return { ...EMPTY_DRAFT, ...partial };
 }
 
-// ─── Test 1: INR conversion — no external call ───────────────────────────────
+// ─── Test 1: INR — no conversion ─────────────────────────────────────────────
 
 section('Phase 4 — INR conversion');
 
-const inrResult = convertToINR(500, 'INR');
+function confirmed(d: ExtractionResult, rate: number | null) {
+  const result = buildConfirmation(d, rate);
+  if (!result.ok) throw new Error(`buildConfirmation failed: ${result.error}`);
+  return result.transaction;
+}
+
+const inrResult = confirmed(draft({ type: 'expense', original_amount: 500, original_currency: 'INR', txn_date: '2026-10-09', expense_description: 'Rent' }), null);
 assert('INR: exchange_rate is null',        inrResult.exchange_rate,    null);
 assert('INR: inr_amount equals original',   inrResult.inr_amount,       500);
 assert('INR: original_amount preserved',    inrResult.original_amount,  500);
@@ -75,102 +64,54 @@ assert('INR: original_currency preserved',  inrResult.original_currency, 'INR');
 
 section('Phase 4 — USD conversion exact result');
 
-const usdResult = convertToINR(500, 'USD', 88.5);
+const usdDraft = (amount: number) => draft({ type: 'income', original_amount: amount, original_currency: 'USD', txn_date: '2026-10-09', client_name: 'Acme' });
+const usdResult = confirmed(usdDraft(500), 88.5);
 assert('USD 500 × 88.5 = 44250',            usdResult.inr_amount,       44250);
 assert('USD: exchange_rate preserved',       usdResult.exchange_rate,    88.5);
 assert('USD: original_amount preserved',     usdResult.original_amount,  500);
 assert('USD: original_currency preserved',   usdResult.original_currency, 'USD');
 
-// ─── Test 3: USD conversion — floating-point safety ─────────────────────────
+// ─── Test 3: USD conversion — exact decimal arithmetic ──────────────────────
 
-section('Phase 4 — USD floating-point safety');
+section('Phase 4 — USD exact arithmetic (same rounding as the saved row)');
 
-const usd83 = convertToINR(100, 'USD', 83.0);
-assert('USD 100 × 83.0 = 8300',             usd83.inr_amount,           8300);
+assert('USD 100 × 83.0 = 8300',             confirmed(usdDraft(100), 83).inr_amount,   8300);
+assert('USD 333 × 3.33 = 1108.89 (not .8900000000001)', confirmed(usdDraft(333), 3.33).inr_amount, 1108.89);
+assert('USD 1 × 80.025 = 80.02 (half-even, matches persistence)', confirmed(usdDraft(1), 80.025).inr_amount, 80.02);
+assert('USD 1 × 80.035 = 80.04 (half-even)', confirmed(usdDraft(1), 80.035).inr_amount, 80.04);
 
-const usd333 = convertToINR(333, 'USD', 3.33);
-assert('USD 333 × 3.33 = 1108.89 (not .8900000000001)', usd333.inr_amount, 1108.89);
+// ─── Test 4: invalid rate is rejected ─────────────────────────────────────────
 
-// ─── Test 4: CurrencyConversionError on missing rate ─────────────────────────
+section('Phase 4 — invalid USD rate');
 
-section('Phase 4 — CurrencyConversionError');
-
-assertThrows(
-  'USD without rate throws CurrencyConversionError',
-  () => convertToINR(500, 'USD'),
-  CurrencyConversionError,
-);
-assertThrows(
-  'USD with null rate throws CurrencyConversionError',
-  () => convertToINR(500, 'USD', null),
-  CurrencyConversionError,
-);
-assertThrows(
-  'USD with negative rate throws CurrencyConversionError',
-  () => convertToINR(500, 'USD', -1),
-  CurrencyConversionError,
-);
+assert('USD with null rate → ok:false',     buildConfirmation(usdDraft(500), null).ok, false);
+assert('USD with negative rate → ok:false', buildConfirmation(usdDraft(500), -1).ok,   false);
+assert('USD with zero rate → ok:false',     buildConfirmation(usdDraft(500), 0).ok,    false);
+assert('USD with 5-decimal rate → ok:false (stored precision is 4)', buildConfirmation(usdDraft(500), 88.12345).ok, false);
 
 // ─── Test 5: Confirmation object — income ────────────────────────────────────
 
 section('Phase 5 — Confirmation object: income');
 
-const incomeDraft = draft({
-  type: 'income',
-  original_amount: 500,
-  original_currency: 'USD',
-  txn_date: '2026-10-09',
-  client_name: 'Acme',
-});
-const incomeConversion = convertToINR(500, 'USD', 88.5);
-const incomeConfirmation = buildConfirmationTransaction(incomeDraft, incomeConversion);
-
+const incomeConfirmation = confirmed(usdDraft(500), 88.5);
 assert('income: type correct',                incomeConfirmation.type,                 'income');
 assert('income: client_name present',         incomeConfirmation.client_name,          'Acme');
-assert('income: expense_description absent',  incomeConfirmation.expense_description,  undefined);
-assert('income: inr_amount = 44250',          incomeConfirmation.inr_amount,           44250);
-assert('income: exchange_rate = 88.5',        incomeConfirmation.exchange_rate,        88.5);
-assert('income: original_amount = 500',       incomeConfirmation.original_amount,      500);
-assert('income: original_currency = USD',     incomeConfirmation.original_currency,    'USD');
+assert('income: expense_description null',    incomeConfirmation.expense_description,  null);
 assert('income: txn_date correct',            incomeConfirmation.txn_date,             '2026-10-09');
 
 // ─── Test 6: Confirmation object — expense ───────────────────────────────────
 
 section('Phase 5 — Confirmation object: expense');
 
-const expenseDraft = draft({
-  type: 'expense',
-  original_amount: 500,
-  original_currency: 'INR',
-  txn_date: '2026-10-09',
-  expense_description: 'Office electricity',
-});
-const expenseConversion = convertToINR(500, 'INR');
-const expenseConfirmation = buildConfirmationTransaction(expenseDraft, expenseConversion);
-
+const expenseConfirmation = confirmed(
+  draft({ type: 'expense', original_amount: 500, original_currency: 'INR', txn_date: '2026-10-09', expense_description: 'Office electricity' }),
+  null,
+);
 assert('expense: type correct',               expenseConfirmation.type,                'expense');
 assert('expense: expense_description present',expenseConfirmation.expense_description, 'Office electricity');
-assert('expense: client_name absent',         expenseConfirmation.client_name,         undefined);
+assert('expense: client_name null',           expenseConfirmation.client_name,         null);
 assert('expense: exchange_rate is null',      expenseConfirmation.exchange_rate,       null);
 assert('expense: inr_amount = 500',           expenseConfirmation.inr_amount,          500);
-
-// ─── Test 7: ConfirmationBuildError on incomplete draft ──────────────────────
-
-section('Phase 5 — ConfirmationBuildError');
-
-assertThrows(
-  'buildConfirmationTransaction throws on null type',
-  () => buildConfirmationTransaction(draft({ type: null }), convertToINR(500, 'INR')),
-  ConfirmationBuildError,
-);
-assertThrows(
-  'buildConfirmationTransaction throws on null txn_date',
-  () => buildConfirmationTransaction(
-    draft({ type: 'income', original_amount: 500, original_currency: 'INR', txn_date: null }),
-    convertToINR(500, 'INR'),
-  ),
-  ConfirmationBuildError,
-);
 
 // ─── Test 8: Phase 2 still asks for currency when missing ────────────────────
 
@@ -212,8 +153,10 @@ assert('fresh user: status = COLLECTING', getSession(testUserId).status, 'COLLEC
 assert('fresh user: currency undefined',  getSession(testUserId).currency, undefined);
 
 // Set to READY_FOR_CONFIRMATION with currency
-const conversion = convertToINR(500, 'INR');
-setSession(testUserId, { status: 'READY_FOR_CONFIRMATION', currency: conversion });
+setSession(testUserId, {
+  status: 'READY_FOR_CONFIRMATION',
+  currency: { original_amount: 500, original_currency: 'INR', exchange_rate: null, inr_amount: 500, exchange_rate_date: '2026-10-09' },
+});
 assert('after setSession: status = READY_FOR_CONFIRMATION', getSession(testUserId).status, 'READY_FOR_CONFIRMATION');
 assert('after setSession: currency defined', getSession(testUserId).currency !== undefined, true);
 

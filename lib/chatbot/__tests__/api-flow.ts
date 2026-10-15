@@ -7,7 +7,7 @@
  *   - /api/chatbot/confirm (Phase 5)
  *   - /api/chatbot/reset (Atomic reset)
  *
- * Run:  npx tsx src/lib/chatbot/__tests__/api-flow.ts
+ * Run:  npx tsx lib/chatbot/__tests__/api-flow.ts
  */
 
 import { NextRequest } from "next/server";
