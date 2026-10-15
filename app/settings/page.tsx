@@ -114,7 +114,7 @@ export default function SettingsPage() {
             <Download aria-hidden />
             Export all (CSV)
           </a>
-          <a href="/api/auth/logout" className={buttonVariants({ variant: "outline" })}>
+          <a href="/api/auth/logout" className={cn(buttonVariants({ variant: "outline" }), "border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive")}>
             <LogOut aria-hidden />
             Sign out
           </a>

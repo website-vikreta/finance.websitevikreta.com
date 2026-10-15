@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Building2, ChevronLeft, ChevronRight, FileText, LayoutDashboard, LogOut, Receipt, Settings, Users } from "lucide-react";
+import { BarChart3, Building2, ChevronLeft, ChevronRight, FileText, LayoutDashboard, Receipt, Settings, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -40,14 +40,10 @@ export function Sidebar({ collapsed = false, onToggleCollapse, isMobileOpen = fa
             );
           })}
         </nav>
-        <div className="space-y-1 border-t border-border p-3">
+        <div className="border-t border-border p-3">
           <button type="button" onClick={onToggleCollapse} className="hidden h-10 w-full items-center justify-center gap-2 rounded-lg text-caption text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 lg:flex" aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}>
             {collapsed ? <ChevronRight className="size-4" aria-hidden /> : <><ChevronLeft className="size-4" aria-hidden /><span>Collapse</span></>}
           </button>
-          <a href="/api/auth/logout" className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-caption text-muted-foreground hover:bg-accent hover:text-destructive focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50", collapsed && "lg:justify-center lg:px-0")} title={collapsed ? "Sign out" : undefined}>
-            <LogOut className="size-4 shrink-0" aria-hidden />
-            {collapsed ? null : <span>Sign out</span>}
-          </a>
         </div>
       </aside>
     </>
