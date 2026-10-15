@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
-import { User, Building, Bell, Shield, Users } from "lucide-react";
+import { User, Building, Bell, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
