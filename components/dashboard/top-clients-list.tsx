@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Users } from "lucide-react";
-import { formatDate, formatINR } from "@/lib/format";
+import { formatDate, formatINR, formatShare } from "@/lib/format";
 import type { ClientSummary } from "@/lib/transactions/queries";
 
 interface TopClientsListProps {
@@ -37,7 +37,7 @@ export function TopClientsList({ clients }: TopClientsListProps) {
       ) : (
         <ul className="mt-5 space-y-6">
           {top.map((client) => {
-            const share = Math.round((client.totalReceived / total) * 100);
+            const share = (client.totalReceived / total) * 100;
             return (
               <li key={client.id} className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
@@ -55,7 +55,7 @@ export function TopClientsList({ clients }: TopClientsListProps) {
                 <div
                   className="h-1.5 overflow-hidden rounded-full bg-muted"
                   role="img"
-                  aria-label={`${share}% of total income`}
+                  aria-label={`${formatShare(client.totalReceived, total)} of total income`}
                 >
                   <div className="h-full rounded-full bg-primary" style={{ width: `${share}%` }} />
                 </div>
@@ -66,7 +66,7 @@ export function TopClientsList({ clients }: TopClientsListProps) {
       )}
 
       {paying.length > VISIBLE ? (
-        <Link href="/clients" className="mt-auto pt-6 text-caption font-medium text-foreground underline-offset-4 hover:underline">
+        <Link href="/clients" className="mt-auto w-fit pt-6 text-caption font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
           View all {paying.length} clients
         </Link>
       ) : null}
