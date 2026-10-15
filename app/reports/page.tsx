@@ -1,16 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { formatINR } from "@/lib/format";
-import { Download, Calendar, TrendingUp, TrendingDown, PieChart } from "lucide-react";
+import { Download, TrendingUp, TrendingDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export default function ReportsPage() {
-  const [dateRange, setDateRange] = useState("FY 2026-27 (Q3)");
-
   const handleExportCSV = () => {
     toast.success("CSV Download initiated", {
       description: "Financial breakdown exported to your downloads folder.",
