@@ -14,6 +14,8 @@ interface TransactionSummaryCardProps {
   /** Label for a card that is no longer actionable (default "Discarded"). */
   discardedLabel?: string;
   isPendingAction?: boolean;
+  /** Likely-duplicate warning from the server. */
+  duplicate?: string;
   onConfirm?: () => void;
   onEdit?: () => void;
   onCancel?: () => void;
@@ -25,6 +27,7 @@ export function TransactionSummaryCard({
   isCancelled = false,
   discardedLabel = "Discarded",
   isPendingAction = false,
+  duplicate,
   onConfirm,
   onEdit,
   onCancel,
@@ -102,6 +105,9 @@ export function TransactionSummaryCard({
               ? transaction.client_name || "Unknown client"
               : transaction.expense_description || "No description"}
           </p>
+          {!isIncome && transaction.category ? (
+            <p className="text-caption text-muted-foreground">{transaction.category}</p>
+          ) : null}
         </div>
 
         <div className={cn("grid gap-3 rounded-lg border border-border/50 bg-background/50 p-3", isUSD && "grid-cols-2")}>
@@ -145,9 +151,15 @@ export function TransactionSummaryCard({
       {/* Confirmation actions */}
       {!isConfirmed && !isCancelled ? (
         <div className="mt-4 space-y-2.5 border-t border-border/60 pt-3">
-          <p className="text-caption text-muted-foreground">
-            Nothing is saved until you confirm.
-          </p>
+          {duplicate ? (
+            <p role="alert" className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-caption text-foreground">
+              {duplicate} Confirm only if it&apos;s a separate payment.
+            </p>
+          ) : (
+            <p className="text-caption text-muted-foreground">
+              Nothing is saved until you confirm.
+            </p>
+          )}
           <div className="grid grid-cols-3 gap-2">
             <Button
               type="button"

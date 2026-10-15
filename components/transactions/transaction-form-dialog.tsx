@@ -6,12 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { createTransactionAction, updateTransactionAction } from "@/app/transactions/actions";
 import { convertUsdToInrDecimal } from "@/lib/currency/precision";
 import { formatINR } from "@/lib/format";
 import type { LedgerRow } from "@/lib/transactions/queries";
 import { todayInIndia } from "@/lib/transactions/period";
+import { CATEGORIES } from "@/lib/transactions/categories";
+
+const CATEGORY_ITEMS = CATEGORIES.map((c) => ({ value: c, label: c }));
 
 type TxnType = "income" | "expense";
 type Currency = "INR" | "USD";
@@ -52,15 +56,21 @@ function Form({ row, onDone }: { row?: LedgerRow | null; onDone: () => void }) {
   const [rate, setRate] = useState(row?.exchangeRate ? String(row.exchangeRate) : "");
   const [client, setClient] = useState(row?.type === "income" ? row.title : "");
   const [description, setDescription] = useState(row?.type === "expense" ? row.title : "");
+  const [category, setCategory] = useState<string>(row?.category ?? "Other");
   const [date, setDate] = useState(row?.date ?? todayInIndia());
   const [error, setError] = useState<string | null>(null);
+  // Server's likely-duplicate warning, tied to the exact values it was about: editing any field clears it.
+  const [warned, setWarned] = useState<{ key: string; message: string } | null>(null);
   const [pending, startTransition] = useTransition();
 
   const inr = currency === "USD" ? previewInr(amount, rate) : null;
+  const valuesKey = [type, currency, amount, rate, client, description, category, date].join("|");
+  const duplicate = warned?.key === valuesKey ? warned.message : null;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const allowDuplicate = duplicate !== null;
     const input = {
       type,
       currency,
@@ -68,11 +78,12 @@ function Form({ row, onDone }: { row?: LedgerRow | null; onDone: () => void }) {
       rate: currency === "USD" ? Number(rate) : null,
       client: type === "income" ? client : null,
       description: type === "expense" ? description : null,
+      category: type === "expense" ? category : null,
       date,
     };
     startTransition(async () => {
-      const result = row ? await updateTransactionAction(row.id, input) : await createTransactionAction(input, requestId);
-      if (!result.ok) return setError(result.error);
+      const result = row ? await updateTransactionAction(row.id, input, allowDuplicate) : await createTransactionAction(input, requestId, allowDuplicate);
+      if (!result.ok) return result.duplicate ? setWarned({ key: valuesKey, message: result.error }) : setError(result.error);
       const label = type === "income" ? client.trim() : description.trim();
       toast.success(row ? `Saved changes to ${label}` : `Added ${label}`);
       onDone();
@@ -117,6 +128,22 @@ function Form({ row, onDone }: { row?: LedgerRow | null; onDone: () => void }) {
         </div>
       )}
 
+      {type === "expense" ? (
+        <div className="grid gap-2">
+          <Label htmlFor="txn-category">Category</Label>
+          <Select items={CATEGORY_ITEMS} value={category} onValueChange={(v) => setCategory(String(v))}>
+            <SelectTrigger id="txn-category" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORIES.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+
       <div className="grid gap-2">
         <Label htmlFor="txn-date">Date</Label>
         <Input id="txn-date" type="date" value={date} max={todayInIndia()} onChange={(e) => setDate(e.target.value)} required />
@@ -126,6 +153,10 @@ function Form({ row, onDone }: { row?: LedgerRow | null; onDone: () => void }) {
         <p role="alert" className="text-caption text-destructive">
           {error}
         </p>
+      ) : duplicate ? (
+        <p role="alert" className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-caption text-foreground">
+          {duplicate} Save it anyway?
+        </p>
       ) : null}
 
       <DialogFooter>
@@ -133,7 +164,7 @@ function Form({ row, onDone }: { row?: LedgerRow | null; onDone: () => void }) {
           Cancel
         </Button>
         <Button type="submit" disabled={pending}>
-          {pending ? "Saving…" : row ? "Save changes" : "Add transaction"}
+          {pending ? "Saving…" : duplicate ? "Save anyway" : row ? "Save changes" : "Add transaction"}
         </Button>
       </DialogFooter>
     </form>

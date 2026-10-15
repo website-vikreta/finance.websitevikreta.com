@@ -20,6 +20,8 @@ export interface ChatMessage {
   confirmation?: {
     required: boolean;
     transaction: ConfirmationTransaction;
+    /** Likely-duplicate warning shown on the card; confirming still saves. */
+    duplicate?: string;
   };
   confirmedTransaction?: ConfirmationTransaction;
   /** Set once a confirmation card is settled; its buttons must not act on the server's newer draft. */
@@ -39,6 +41,8 @@ export interface PostMessageSuccessResponse {
   confirmation?: {
     required: boolean;
     transaction: ConfirmationTransaction;
+    /** Likely-duplicate warning shown on the card; confirming still saves. */
+    duplicate?: string;
   };
   currency?: {
     exchange_rate: number | null;

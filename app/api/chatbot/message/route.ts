@@ -41,6 +41,7 @@ import { validateExtraction } from "@/lib/chatbot/validate";
 import { parseExchangeRate, buildConfirmation } from "@/lib/chatbot/confirm";
 import { detectContradiction, extractExplicitExchangeRate } from "@/lib/chatbot/clarify";
 import { confirmAndPersistTransaction } from "@/lib/transactions/persist";
+import { duplicateMessage, findDuplicate } from "@/lib/transactions/duplicates";
 import { answerQuestion, looksLikeQuestion, parseQuestion } from "@/lib/chatbot/ask";
 import { HELP_TEXT, isCancel, isCasualGreeting, isConfirm, isHelpRequest } from "@/lib/chatbot/intent";
 import crypto from "crypto";
@@ -685,5 +686,17 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
   );
 }
 
-export const POST = withChatState(handlePost);
+/** Every review card carries a likely-duplicate hint, added here once instead of at each card builder above. */
+async function handlePostWithDuplicateHint(req: NextRequest): Promise<NextResponse> {
+  const res = await handlePost(req);
+  const body = await res.clone().json().catch(() => null);
+  const transaction = body?.confirmation?.transaction;
+  if (!transaction) return res;
+  const dup = await findDuplicate(transaction);
+  if (!dup) return res;
+  body.confirmation.duplicate = duplicateMessage(dup);
+  return NextResponse.json(body, { status: res.status, headers: res.headers });
+}
+
+export const POST = withChatState(handlePostWithDuplicateHint);
 export const GET = withChatState(handleGet);

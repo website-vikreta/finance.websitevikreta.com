@@ -15,9 +15,12 @@ import {
   computeAmounts,
   computeCanonicalPayloadHash,
   confirmAndPersistTransaction,
+  resolveCategoryId,
   resolveClientId,
   type PersistError,
 } from "@/lib/transactions/persist";
+import { duplicateMessage, findDuplicate } from "@/lib/transactions/duplicates";
+import { toCategory } from "@/lib/transactions/categories";
 
 export interface TransactionInput {
   type: "income" | "expense";
@@ -29,11 +32,14 @@ export interface TransactionInput {
   client: string | null;
   /** Required for expenses. */
   description: string | null;
+  /** Expense category (one of CATEGORIES); "Other" when missing. */
+  category: string | null;
   /** YYYY-MM-DD */
   date: string;
 }
 
-export type ManageResult = { ok: true; id: string } | { ok: false; error: string };
+/** `duplicate` marks a likely-duplicate warning: resubmitting with allowDuplicate saves anyway. */
+export type ManageResult = { ok: true; id: string } | { ok: false; error: string; duplicate?: true };
 
 const MAX_TEXT = 200;
 
@@ -63,6 +69,7 @@ export function toDraft(raw: unknown): { ok: true; draft: ExtractionResult; rate
     client_name: type === "income" ? text(input.client) : null,
     expense_description: type === "expense" ? text(input.description) : null,
     txn_date: date,
+    category: type === "expense" ? (toCategory(input.category) ?? "Other") : null,
   };
   const validation = validateExtraction(draft);
   if (!validation.complete) return { ok: false, error: validation.question ?? "Some details are missing." };
@@ -76,10 +83,18 @@ function errorOf(result: PersistError | { ok: false; error: string }): ManageRes
 
 const jsonSafe = (row: unknown) => JSON.parse(JSON.stringify(row));
 
-export async function createManualTransaction(userId: string, raw: unknown, idempotencyKey: string): Promise<ManageResult> {
+async function duplicateWarning(draft: ExtractionResult, excludeId: string | null): Promise<ManageResult | null> {
+  const dup = await findDuplicate(draft, excludeId);
+  return dup ? { ok: false, error: duplicateMessage(dup), duplicate: true } : null;
+}
+
+export async function createManualTransaction(userId: string, raw: unknown, idempotencyKey: string, allowDuplicate = false): Promise<ManageResult> {
   const parsed = toDraft(raw);
   if (!parsed.ok) return parsed;
   const { draft, rate } = parsed;
+
+  const warning = allowDuplicate ? null : await duplicateWarning(draft, null);
+  if (warning) return warning;
 
   const result = await confirmAndPersistTransaction({
     userId,
@@ -100,10 +115,13 @@ export async function createManualTransaction(userId: string, raw: unknown, idem
   return result.ok ? { ok: true, id: result.transaction.id as string } : errorOf(result);
 }
 
-export async function updateTransaction(userId: string, id: string, raw: unknown): Promise<ManageResult> {
+export async function updateTransaction(userId: string, id: string, raw: unknown, allowDuplicate = false): Promise<ManageResult> {
   const parsed = toDraft(raw);
   if (!parsed.ok) return parsed;
   const { draft, rate } = parsed;
+
+  const warning = allowDuplicate ? null : await duplicateWarning(draft, id);
+  if (warning) return warning;
 
   const money = computeAmounts(draft, rate);
   if (!money.ok) return errorOf(money);
@@ -121,6 +139,7 @@ export async function updateTransaction(userId: string, id: string, raw: unknown
       const clientName = typeId === 1 ? (draft.client_name as string).trim() : null;
       const clientId = clientName ? await resolveClientId(tx, clientName) : null;
       const description = typeId === 2 ? (draft.expense_description as string).trim() : null;
+      const categoryId = typeId === 2 ? (await resolveCategoryId(tx, draft.category)).id : null;
 
       const [after] = await tx
         .update(transactions)
@@ -135,6 +154,7 @@ export async function updateTransaction(userId: string, id: string, raw: unknown
           exchangeRateDate: money.exchangeRateDate,
           rateSource: money.rateSource,
           description,
+          categoryId,
           txnDate: draft.txn_date as string,
           payloadHash: computeCanonicalPayloadHash({
             typeId,
