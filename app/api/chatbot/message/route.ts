@@ -41,48 +41,9 @@ import { validateExtraction } from "@/lib/chatbot/validate";
 import { parseExchangeRate, buildConfirmation } from "@/lib/chatbot/confirm";
 import { detectContradiction, extractExplicitExchangeRate } from "@/lib/chatbot/clarify";
 import { confirmAndPersistTransaction } from "@/lib/transactions/persist";
+import { answerQuestion, looksLikeQuestion, parseQuestion } from "@/lib/chatbot/ask";
+import { HELP_TEXT, isCancel, isCasualGreeting, isConfirm, isHelpRequest } from "@/lib/chatbot/intent";
 import crypto from "crypto";
-
-// ---------------------------------------------------------------------------
-// Greeting detection — used across all states
-// ---------------------------------------------------------------------------
-
-/**
- * Tests whether the message is ONLY a casual greeting with no actionable
- * financial instruction. Must NOT match messages like "Hello, change the
- * amount to ₹500" — those contain actionable content.
- */
-function isCasualGreeting(text: string): boolean {
-  const normalized = text
-    .trim()
-    .toLowerCase()
-    .replace(/[^\w\s]/g, "")
-    .replace(/\s+/g, " ");
-
-  const greetingPatterns = [
-    /^hi$/,
-    /^hello$/,
-    /^hey$/,
-    /^hey\s+there$/,
-    /^hello\s+there$/,
-    /^good\s+(morning|afternoon|evening|day|night)$/,
-    /^how\s+are\s+you(\s+doing)?$/,
-    /^chat$/,
-    /^howdy$/,
-    /^greetings$/,
-    /^whats\s+up$/,
-    /^sup$/,
-    /^hola$/,
-    /^thanks?$/,
-    /^thank\s+you(\s+so\s+much)?$/,
-    /^thanks\s+a\s+lot$/,
-    /^thx$/,
-    /^ty$/,
-    /^namaste$/,
-  ];
-
-  return greetingPatterns.some((pattern) => pattern.test(normalized));
-}
 
 // ---------------------------------------------------------------------------
 // Exchange-rate edit detection — matches "change the exchange rate to X"
@@ -161,6 +122,12 @@ function buildGreetingResponse(
   return "Hi! What do you want to record — an income or an expense?";
 }
 
+const CANCELLED_RESPONSE = {
+  ok: true,
+  status: "CANCELLED",
+  message: "Transaction discarded. Start a new message to record another.",
+} as const;
+
 // ---------------------------------------------------------------------------
 // POST — send a manager message
 // ---------------------------------------------------------------------------
@@ -199,8 +166,13 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
   // AWAITING_EXCHANGE_RATE — parse rate from manager reply (no Gemini)
   // =========================================================================
   if (session.status === "AWAITING_EXCHANGE_RATE") {
+    if (isCancel(message)) {
+      clearAll(userId);
+      return NextResponse.json(CANCELLED_RESPONSE, { status: 200 });
+    }
+
     // Handle greetings during rate collection
-    if (isCasualGreeting(message)) {
+    if (isCasualGreeting(message) || isHelpRequest(message)) {
       return NextResponse.json(
         {
           ok: true,
@@ -277,10 +249,8 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
   // exchange-rate edits, or correction message
   // =========================================================================
   if (session.status === "READY_FOR_CONFIRMATION") {
-    const lower = message.toLowerCase().trim();
-
     // -- Confirm / Cancel keywords --
-    if (lower === "confirm" || lower === "yes") {
+    if (isConfirm(message)) {
       const result = await confirmAndPersistTransaction({
         userId,
         source: "chatbot",
@@ -302,21 +272,13 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
         },
         { status: 200 },
       );
-    } else if (lower === "cancel") {
+    } else if (isCancel(message)) {
       clearAll(userId);
-
-      return NextResponse.json(
-        {
-          ok: true,
-          status: "CANCELLED",
-          message: "Transaction discarded. Start a new message to record another.",
-        },
-        { status: 200 },
-      );
+      return NextResponse.json(CANCELLED_RESPONSE, { status: 200 });
     }
 
-    // -- Greeting during review: respond politely, keep state --
-    if (isCasualGreeting(message)) {
+    // -- Greeting / help during review: respond politely, keep state --
+    if (isCasualGreeting(message) || isHelpRequest(message)) {
       const draft = getDraft(userId);
       const currency = session.currency;
 
@@ -446,6 +408,20 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
   const existing = getDraft(userId);
   const currentValidation = validateExtraction(existing);
 
+  const hasDraft = Object.values(existing).some((v) => v !== null);
+
+  if (hasDraft && isCancel(message)) {
+    clearAll(userId);
+    return NextResponse.json(CANCELLED_RESPONSE, { status: 200 });
+  }
+
+  if (isHelpRequest(message)) {
+    return NextResponse.json(
+      { ok: true, status: "COLLECTING", draft: existing, validation: { ...currentValidation, question: HELP_TEXT }, question: HELP_TEXT },
+      { status: 200 },
+    );
+  }
+
   // Casual greeting: respond warmly without premature validation errors
   if (isCasualGreeting(message)) {
     const greetingText = buildGreetingResponse(existing, "COLLECTING", currentValidation);
@@ -463,6 +439,19 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
       },
       { status: 200 },
     );
+  }
+
+  // -- Question about recorded money ("How much did we spend this month?") --
+  // Only between transactions, so a half-entered draft is never disturbed.
+  if (!hasDraft && looksLikeQuestion(message)) {
+    const parsed = await parseQuestion(message, today);
+    if (parsed) {
+      const answer = await answerQuestion(parsed);
+      return NextResponse.json(
+        { ok: true, status: "COLLECTING", draft: existing, validation: { ...currentValidation, question: answer }, question: answer },
+        { status: 200 },
+      );
+    }
   }
 
   // -- Exchange-rate edit in COLLECTING state (after EDIT action) --
@@ -541,6 +530,14 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
   }
 
   const extraction = extractResult.data;
+
+  if (!hasDraft && Object.values(extraction).every((v) => v === null)) {
+    const question = `I couldn't find a transaction in that. ${HELP_TEXT}`;
+    return NextResponse.json(
+      { ok: true, status: "COLLECTING", extraction, draft: existing, validation: { ...currentValidation, question }, question },
+      { status: 200 },
+    );
+  }
 
   // Two alternative values for one field ("$50 or $60") — drop it and ask, never guess.
   const contradiction = detectContradiction(message);

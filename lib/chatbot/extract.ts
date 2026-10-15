@@ -69,7 +69,7 @@ const DEFAULT_MODELS = [
   "gemini-3.1-flash-lite", // Secondary backup
 ];
 
-function getModelHierarchy(): string[] {
+export function getModelHierarchy(): string[] {
   const envModel = process.env.GEMINI_MODEL?.trim();
   const models = envModel ? [envModel, ...DEFAULT_MODELS.filter((m) => m !== envModel)] : DEFAULT_MODELS;
   return Array.from(new Set(models));
