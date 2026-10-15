@@ -74,14 +74,14 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
         >
           <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-muted/60 px-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="grid size-9 place-items-center rounded-full border border-border bg-surface-elevated text-primary shadow-xs shrink-0">
+              <div className="grid size-9 place-items-center rounded-full border border-border bg-surface-elevated text-foreground shadow-xs shrink-0">
                 <Sparkles className="size-4" aria-hidden />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h2 className="text-title-sm font-semibold text-foreground truncate">Finance Chat Bot</h2>
                   {status === "READY_FOR_CONFIRMATION" ? (
-                    <Badge variant="outline" className="border-primary/40 bg-primary/10 px-1.5 py-0 text-micro font-medium text-primary shrink-0">Review pending</Badge>
+                    <Badge variant="outline" className="border-primary/40 bg-primary/10 px-1.5 py-0 text-micro font-medium text-foreground shrink-0">Review pending</Badge>
                   ) : status === "AWAITING_EXCHANGE_RATE" ? (
                     <Badge variant="outline" className="border-warning/40 bg-warning/10 px-1.5 py-0 text-micro font-medium text-warning shrink-0">Rate required</Badge>
                   ) : status === "CONFIRMED" ? (

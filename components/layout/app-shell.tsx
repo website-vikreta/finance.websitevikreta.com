@@ -218,7 +218,7 @@ export function AppShell({ children }: AppShellProps) {
                 aria-label="Widen chat panel (+40px)"
                 onClick={onExpandChat}
                 disabled={chatWidth >= CHAT_MAX_WIDTH}
-                className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-primary/20 hover:text-primary transition-colors disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-primary/20 hover:text-foreground transition-colors disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <ChevronLeft className="size-3.5" />
               </button>
@@ -229,7 +229,7 @@ export function AppShell({ children }: AppShellProps) {
                 aria-label="Narrow chat panel (-40px)"
                 onClick={onShrinkChat}
                 disabled={chatWidth <= CHAT_MIN_WIDTH}
-                className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-primary/20 hover:text-primary transition-colors disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-primary/20 hover:text-foreground transition-colors disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <ChevronRight className="size-3.5" />
               </button>

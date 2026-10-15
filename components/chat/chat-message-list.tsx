@@ -76,7 +76,7 @@ export function ChatMessageList({
       {/* ── Fixed Welcome Card & Initial Quick Action Pills ── */}
       <div className="flex flex-col items-start">
         <div className="flex items-start gap-2.5 max-w-full w-full">
-          <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-elevated border border-border text-primary shadow-xs">
+          <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-elevated border border-border text-foreground shadow-xs">
             <Sparkles className="size-3.5" aria-hidden />
           </div>
 
@@ -121,7 +121,7 @@ export function ChatMessageList({
         return (
           <div key={message.id} className="flex flex-col items-start">
             <div className="flex items-start gap-2.5 max-w-full">
-              <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-elevated border border-border text-primary">
+              <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-elevated border border-border text-foreground">
                 <Sparkles className="size-3.5" aria-hidden />
               </div>
 
@@ -201,7 +201,7 @@ export function ChatMessageList({
       {/* Typing / Processing Indicator */}
       {isLoading && (
         <div className="flex items-start gap-2.5">
-          <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-elevated border border-border text-primary animate-pulse">
+          <div className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-elevated border border-border text-foreground animate-pulse">
             <Sparkles className="size-3.5" aria-hidden />
           </div>
           <div className="rounded-xl border border-border bg-card px-4 py-3">

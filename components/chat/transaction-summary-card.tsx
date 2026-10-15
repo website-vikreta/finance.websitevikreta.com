@@ -89,7 +89,7 @@ export function TransactionSummaryCard({
               <span>{discardedLabel}</span>
             </span>
           ) : (
-            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-caption font-medium text-primary">
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-caption font-medium text-foreground">
               Ready for review
             </span>
           )}
