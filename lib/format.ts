@@ -49,6 +49,27 @@ export function formatINR(
   return formatted;
 }
 
+/** "2026-10-01" → "Oct". Parsed as UTC so the server timezone never shifts the month. */
+export function formatMonthShort(ymd: string): string {
+  return new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
+}
+
+/** "2026-10-14" → "14 Oct 2026". */
+export function formatDate(ymd: string): string {
+  return new Date(`${ymd}T00:00:00Z`).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Percent change from `previous` to `current`, or null when there is no baseline. */
+export function percentChange(current: number, previous: number): number | null {
+  if (previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
 export function formatCurrentHeroDate(date: Date = new Date()): string {
   const weekday = date.toLocaleDateString("en-IN", { weekday: "long" });
   const day = date.getDate();
