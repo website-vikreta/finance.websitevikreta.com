@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design tokens: source of truth is DESIGN.md (ClickHouse system).
- * Dark only. There is no light theme; <html> always carries `.dark`.
+ * Design tokens: source of truth is DESIGN.md (light Website Vikreta finance theme).
+ * Light only. No dark theme, no `.dark` class, no toggle.
  * Rules for using these tokens: .ai/standards/design-system.md
  */
 
@@ -113,6 +113,9 @@
   --text-caption: 13px;
   --text-caption--line-height: 1.4;
   --text-caption--font-weight: 500;
+  --text-micro: 11px;
+  --text-micro--line-height: 1.4;
+  --text-micro--font-weight: 500;
   --text-eyebrow: 12px;
   --text-eyebrow--line-height: 1.4;
   --text-eyebrow--letter-spacing: 1.5px;
@@ -176,11 +179,6 @@
   --sidebar-accent-foreground: #0A0A0A;
   --sidebar-border: #E8E8E2;
   --sidebar-ring: #FFD600;
-}
-
-.bg-dot-pattern {
-  background-image: radial-gradient(#d4d4cb 1.2px, transparent 1.2px);
-  background-size: 14px 14px;
 }
 
 @layer base {
