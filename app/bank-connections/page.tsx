@@ -9,8 +9,6 @@ import {
   Building2,
   RefreshCw,
   Plus,
-  CheckCircle2,
-  Lock,
   ArrowRight,
   ShieldCheck,
   X,
