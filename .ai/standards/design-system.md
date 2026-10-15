@@ -1,10 +1,10 @@
 # Design System — Finance Tool
 
-> **Source of truth: `DESIGN.md`** (ClickHouse system). This file maps those tokens to the code: CSS variables in `src/app/globals.css` and the Tailwind classes you actually write.
+> **Source of truth: `DESIGN.md`** (ClickHouse system). This file maps those tokens to the code: CSS variables in `app/globals.css` and the Tailwind classes you actually write.
 > Never inline hex. Never invent a size, radius or color that is not listed here. If you need one, add it to `globals.css` + this file + `learning.md` together.
 
 ## Theme Setup (already done)
-- Dark only. `<html class="dark">` is permanent in `src/app/layout.tsx`. There is no theme toggle and no light palette. Don't add `dark:` variants in new code; there is only one theme.
+- Dark only. `<html class="dark">` is permanent in `app/layout.tsx`. There is no theme toggle and no light palette. Don't add `dark:` variants in new code; there is only one theme.
 - `:root` holds DESIGN.md values. `@theme inline` exposes them as Tailwind utilities.
 - Fonts: `--font-inter` (sans + heading), `--font-jetbrains-mono` (mono) via `next/font/google`.
 

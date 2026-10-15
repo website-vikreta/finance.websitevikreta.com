@@ -14,8 +14,8 @@ Correct money first, then speed, then polish. A fast screen showing a wrong tota
 ```
 Framework:     Next.js 16 (App Router), React 19
 Language:      TypeScript (strict)
-Styling:       Tailwind CSS v4 + CSS custom properties (tokens in src/app/globals.css)
-UI kit:        shadcn/ui (style base-nova, Base UI primitives) in src/components/ui/
+Styling:       Tailwind CSS v4 + CSS custom properties (tokens in app/globals.css)
+UI kit:        shadcn/ui (style base-nova, Base UI primitives) in components/ui/
 Icons:         lucide-react
 Toasts:        sonner (<Toaster /> mounted in layout)
 Motion:        tw-animate-css + CSS transitions (no GSAP, no Framer unless approved)
@@ -47,11 +47,11 @@ Read `node_modules/next/dist/docs/` before using any Next.js API. This version d
 
 ### Folder Layout (single-app until the monorepo question is answered)
 ```
-src/app/                     Routes, layouts, route handlers (app/api/*)
-src/components/ui/           shadcn primitives (themed, do not fork per screen)
-src/components/layout/       App shell: Sidebar, TopBar, PageHeader
-src/components/<feature>/    Feature components (transactions/, clients/, chat/, analytics/)
-src/lib/                     utils.ts (cn), money.ts, currency.ts, validation.ts, db/, audit.ts
+app/                     Routes, layouts, route handlers (app/api/*)
+components/ui/           shadcn primitives (themed, do not fork per screen)
+components/layout/       App shell: Sidebar, TopBar, PageHeader
+components/<feature>/    Feature components (transactions/, clients/, chat/, analytics/)
+lib/                     utils.ts (cn), money.ts, currency.ts, validation.ts, db/, audit.ts
 ```
 Folder names map 1:1 to SRS packages (`db`, `shared`, `currency`, `chatbot`, `analytics`, `ui`) so a later move to `packages/*` is a rename, not a rewrite.
 
