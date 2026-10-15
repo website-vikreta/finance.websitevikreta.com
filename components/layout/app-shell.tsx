@@ -122,13 +122,13 @@ export function AppShell({ children }: AppShellProps) {
   }, []);
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col bg-background font-sans text-foreground">
+    <div className="flex h-dvh min-h-0 flex-col bg-background font-sans text-foreground print:block print:h-auto print:bg-card">
       {/* Top Navbar */}
       <Navbar
         onToggleSidebar={() => setMobileSidebarOpen((v) => !v)}
       />
 
-      <div ref={containerRef} className="relative flex min-h-0 flex-1 overflow-hidden">
+      <div ref={containerRef} className="relative flex min-h-0 flex-1 overflow-hidden print:block print:overflow-visible">
         {/* Left Sidebar */}
         <Sidebar
           collapsed={sidebarCollapsed}
@@ -140,7 +140,7 @@ export function AppShell({ children }: AppShellProps) {
         {/* Main content automatically resizes beside the docked Finance AI panel */}
         <main
           className={cn(
-            "min-w-0 flex-1 overflow-x-hidden overflow-y-auto transition-[padding] duration-200",
+            "min-w-0 flex-1 overflow-x-hidden overflow-y-auto transition-[padding] duration-200 print:overflow-visible print:p-0",
             financeAIOpen ? "p-4 md:p-6" : "p-4 pb-24 md:p-8 md:pb-24" // pb-24 keeps the last row clear of the floating bot
           )}
         >
@@ -156,7 +156,7 @@ export function AppShell({ children }: AppShellProps) {
             onClick={handleOpenFinanceAI}
             aria-label="Open Finance Chat Bot"
             title="Finance Chat Bot"
-            className="bot-fab group fixed right-4 bottom-4 z-30 grid size-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:right-6 sm:bottom-6"
+            className="bot-fab group print:hidden fixed right-4 bottom-4 z-30 grid size-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:right-6 sm:bottom-6"
           >
             <BotFace className="size-8" />
           </button>
@@ -178,7 +178,7 @@ export function AppShell({ children }: AppShellProps) {
             onKeyDown={onKeyDown}
             onDoubleClick={onResetChat}
             className={cn(
-              "relative hidden xl:flex flex-col items-center justify-center",
+              "relative hidden xl:flex print:hidden flex-col items-center justify-center",
               "w-2.5 shrink-0 cursor-col-resize select-none",
               "border-l border-r border-border/40",
               "bg-surface-soft hover:bg-primary/10 active:bg-primary/20",

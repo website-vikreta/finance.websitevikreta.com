@@ -19,6 +19,11 @@ export function todayInIndia(now: Date = new Date()): string {
   return new Date(now.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** Current time in India as HH:MM (24h). */
+export function timeInIndia(now: Date = new Date()): string {
+  return new Date(now.getTime() + IST_OFFSET_MS).toISOString().slice(11, 16);
+}
+
 /** First day (YYYY-MM-DD) of the period. The Indian financial year starts on 1 April. */
 export function periodStart(period: Period, now: Date = new Date()): string {
   const ist = new Date(now.getTime() + IST_OFFSET_MS);

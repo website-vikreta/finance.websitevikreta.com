@@ -222,3 +222,22 @@
   0%, 92%, 100% { transform: scaleY(1); }
   95% { transform: scaleY(0.1); }
 }
+
+/* Reports → Export PDF uses the browser's print. A zero page margin drops the browser's
+   date/URL header and footer; .print-document repeats its padding on every page instead. */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  .print-document {
+    padding: 12mm 14mm;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  body {
+    background: var(--card);
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
