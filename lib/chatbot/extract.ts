@@ -25,6 +25,7 @@
  */
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { normalizeClientName } from "./clarify";
 
 /** Keep a chat reply within the product's response budget (Google GenAI minimum deadline is 10s). */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -190,7 +191,13 @@ If no date is mentioned or determinable → null.
 
 Extract the numeric value only (no currency symbol).
 Example: "$500" → 500, "₹12,000" → 12000.
+An exchange rate is never the amount: in "$100 at 85 per dollar" the amount is 100.
+If two different amounts are offered as alternatives ("$50 or $60") → null; the system will ask.
 If no amount is stated → null.
+
+## client_name extraction
+
+Return the bare client name without lead-ins: "from the Reliance" → "Reliance", "payment received from Tata Consultancy Services" → "Tata Consultancy Services".
 
 ## expense_description extraction
 
@@ -272,7 +279,7 @@ function validateExtraction(raw: unknown): ExtractionResult {
     type: obj.type as ExtractionResult["type"],
     original_amount: obj.original_amount as number | null,
     original_currency: obj.original_currency as ExtractionResult["original_currency"],
-    client_name: obj.client_name as string | null,
+    client_name: normalizeClientName(obj.client_name as string | null),
     expense_description: obj.expense_description as string | null,
     txn_date: obj.txn_date as string | null,
   };
@@ -357,8 +364,9 @@ export function tryDeterministicExtraction(
         break;
       }
       case "client_name": {
-        if (clean.length > 0 && clean.length <= 100) {
-          result.client_name = clean;
+        const name = clean.length <= 100 ? normalizeClientName(clean) : null;
+        if (name) {
+          result.client_name = name;
           return result;
         }
         break;
