@@ -127,6 +127,84 @@ function isUniqueConstraintViolation(err: unknown): boolean {
 
 // ─── Core Persistence Service ────────────────────────────────────────────────
 
+export type PersistError = Extract<PersistResult, { ok: false }>;
+
+export type Amounts = {
+  ok: true;
+  originalAmount: string;
+  amountInr: string;
+  exchangeRate: string | null;
+  exchangeRateDate: string | null;
+  rateSource: string | null;
+};
+
+/**
+ * Exact NUMERIC strings for a draft: INR is stored as-is; USD converts with the
+ * manager-entered rate using half-even rounding (lib/currency/precision.ts).
+ */
+export function computeAmounts(
+  draft: ExtractionResult,
+  rate: number | null,
+  rateDate?: string | null,
+): Amounts | PersistError {
+  try {
+    const amountStr = String(draft.original_amount);
+    const originalAmount = toMajorDecimal(amountStr);
+    if (draft.original_currency === "INR") {
+      return { ok: true, originalAmount, amountInr: originalAmount, exchangeRate: null, exchangeRateDate: null, rateSource: null };
+    }
+    if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+      return {
+        ok: false,
+        error: "A valid positive exchange rate is required for USD transactions.",
+        code: "INVALID_DATA",
+        status: 400,
+      };
+    }
+    return {
+      ok: true,
+      originalAmount,
+      amountInr: convertUsdToInrDecimal(amountStr, rate.toString()),
+      exchangeRate: rate.toFixed(4),
+      exchangeRateDate: rateDate || draft.txn_date,
+      rateSource: "manual",
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof DecimalPrecisionError ? err.message : "Invalid monetary or exchange rate precision.",
+      code: err instanceof DecimalPrecisionError ? "PRECISION_ERROR" : "INVALID_DATA",
+      status: 400,
+    };
+  }
+}
+
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Finds the active client by normalised name, or creates it (race-safe on the unique index). */
+export async function resolveClientId(tx: DbTx, clientName: string): Promise<string> {
+  const normalized = clientName.trim().toLowerCase();
+  const find = async () => {
+    const [found] = await tx
+      .select()
+      .from(clients)
+      .where(and(isNull(clients.deletedAt), sql`lower(trim(both from ${clients.clientName})) = ${normalized}`));
+    return found?.clientId ?? null;
+  };
+
+  const existing = await find();
+  if (existing) return existing;
+  try {
+    const [created] = await tx.insert(clients).values({ clientName: clientName.trim() }).returning();
+    return created.clientId;
+  } catch (err) {
+    if (!isUniqueConstraintViolation(err)) throw err;
+    const recheck = await find();
+    if (!recheck) throw err;
+    return recheck;
+  }
+}
+
 /**
  * Persists an explicitly confirmed transaction into PostgreSQL with full atomicity,
  * Banker's Rounding, client resolution, and duplicate protection.
@@ -149,6 +227,10 @@ export async function confirmAndPersistTransaction(
   // 2. Load authoritative server-side draft and state
   const draft = params.draft ?? getDraft(userId);
   const session = params.sessionState ?? getSession(userId);
+  // Manual entries must not overwrite the manager's in-progress chat session.
+  const rememberInChat = (state: ChatSessionState) => {
+    if (params.source !== "manual") setSession(userId, state);
+  };
 
   // 3. State machine verification
   if (session.status !== "READY_FOR_CONFIRMATION") {
@@ -248,55 +330,9 @@ export async function confirmAndPersistTransaction(
   }
 
   // 5. Monetary precision and exact arithmetic
-  const amountStr = draft.original_amount.toString();
-  let originalAmount: string;
-  let amountInr: string;
-  let exchangeRate: string | null = null;
-  let exchangeRateDate: string | null = null;
-  let rateSource: string | null = null;
-
-  try {
-    if (draft.original_currency === "INR") {
-      originalAmount = toMajorDecimal(amountStr);
-      amountInr = originalAmount;
-      exchangeRate = null;
-      exchangeRateDate = null;
-      rateSource = null;
-    } else {
-      // USD path
-      const rateNum = session.currency?.exchange_rate;
-      if (typeof rateNum !== "number" || !Number.isFinite(rateNum) || rateNum <= 0) {
-        return {
-          ok: false,
-          error: "A valid positive exchange rate is required for USD transactions.",
-          code: "INVALID_DATA",
-          status: 400,
-        };
-      }
-
-      const rateStr = rateNum.toString();
-      originalAmount = toMajorDecimal(amountStr);
-      amountInr = convertUsdToInrDecimal(amountStr, rateStr);
-      exchangeRate = rateNum.toFixed(4);
-      exchangeRateDate = session.currency?.exchange_rate_date || draft.txn_date;
-      rateSource = "manual";
-    }
-  } catch (err) {
-    if (err instanceof DecimalPrecisionError) {
-      return {
-        ok: false,
-        error: err.message,
-        code: "PRECISION_ERROR",
-        status: 400,
-      };
-    }
-    return {
-      ok: false,
-      error: "Invalid monetary or exchange rate precision.",
-      code: "INVALID_DATA",
-      status: 400,
-    };
-  }
+  const money = computeAmounts(draft, session.currency?.exchange_rate ?? null, session.currency?.exchange_rate_date);
+  if (!money.ok) return money;
+  const { originalAmount, amountInr, exchangeRate, exchangeRateDate, rateSource } = money;
 
   // 6. Idempotency key and payload hash
   const idempotencyKey =
@@ -326,7 +362,7 @@ export async function confirmAndPersistTransaction(
     if (existingTxn) {
       if (existingTxn.payloadHash === payloadHash) {
         const confirmedTransaction = mapRowToConfirmationTransaction(existingTxn);
-        setSession(userId, {
+        rememberInChat({
           status: "CONFIRMED",
           currency: session.currency,
           idempotencyKey,
@@ -367,56 +403,8 @@ export async function confirmAndPersistTransaction(
         .onConflictDoNothing();
 
       // Resolve client if income
-      let clientId: string | null = null;
-      let clientNameSnapshot: string | null = null;
-
-      if (typeId === 1) {
-        const clientName = draft.client_name!.trim();
-        clientNameSnapshot = clientName;
-        const normalized = clientName.toLowerCase();
-
-        const [foundClient] = await tx
-          .select()
-          .from(clients)
-          .where(
-            and(
-              isNull(clients.deletedAt),
-              sql`lower(trim(both from ${clients.clientName})) = ${normalized}`,
-            ),
-          );
-
-        if (foundClient) {
-          clientId = foundClient.clientId;
-        } else {
-          try {
-            const [newClient] = await tx
-              .insert(clients)
-              .values({ clientName })
-              .returning();
-            clientId = newClient.clientId;
-          } catch (insertErr) {
-            // Concurrent creation check
-            if (isUniqueConstraintViolation(insertErr)) {
-              const [recheckClient] = await tx
-                .select()
-                .from(clients)
-                .where(
-                  and(
-                    isNull(clients.deletedAt),
-                    sql`lower(trim(both from ${clients.clientName})) = ${normalized}`,
-                  ),
-                );
-              if (recheckClient) {
-                clientId = recheckClient.clientId;
-              } else {
-                throw insertErr;
-              }
-            } else {
-              throw insertErr;
-            }
-          }
-        }
-      }
+      const clientNameSnapshot = typeId === 1 ? draft.client_name!.trim() : null;
+      const clientId = clientNameSnapshot ? await resolveClientId(tx, clientNameSnapshot) : null;
 
       // Insert transaction
       const [insertedTxn] = await tx
@@ -467,7 +455,7 @@ export async function confirmAndPersistTransaction(
     const confirmedTransaction = mapRowToConfirmationTransaction(savedTxn);
 
     // Update in-memory session only after DB commit succeeds
-    setSession(userId, {
+    rememberInChat({
       status: "CONFIRMED",
       currency: session.currency,
       idempotencyKey,
@@ -491,7 +479,7 @@ export async function confirmAndPersistTransaction(
         if (recheckTxn) {
           if (recheckTxn.payloadHash === payloadHash) {
             const confirmedTransaction = mapRowToConfirmationTransaction(recheckTxn);
-            setSession(userId, {
+            rememberInChat({
               status: "CONFIRMED",
               currency: session.currency,
               idempotencyKey,
