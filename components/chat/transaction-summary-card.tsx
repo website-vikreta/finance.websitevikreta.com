@@ -90,7 +90,7 @@ export function TransactionSummaryCard({
             </span>
           ) : (
             <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-caption font-medium text-primary">
-              Ready for Review
+              Ready for review
             </span>
           )}
         </div>
@@ -99,9 +99,7 @@ export function TransactionSummaryCard({
       {/* Primary Financial Display */}
       <div className="mt-3.5 space-y-3">
         <div>
-          <p className="text-eyebrow text-muted-foreground uppercase tracking-wider">
-            {isIncome ? "Client / Source" : "Expense Purpose"}
-          </p>
+          <p className="text-caption text-muted-foreground">{isIncome ? "Client" : "For"}</p>
           <p className="mt-0.5 text-title-sm font-semibold text-foreground">
             {isIncome
               ? transaction.client_name || "Unspecified Client"
@@ -150,7 +148,7 @@ export function TransactionSummaryCard({
         {!isConfirmed && !isCancelled ? (
           <div className="space-y-2.5">
             <p className="text-caption text-muted-foreground">
-              Please review and explicitly confirm. No database write will occur until confirmed.
+              Nothing is saved until you confirm.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -162,7 +160,7 @@ export function TransactionSummaryCard({
                 className="flex-1 font-semibold"
               >
                 <Check className="size-3.5" aria-hidden />
-                Confirm Transaction
+                Confirm
               </Button>
               <Button
                 type="button"

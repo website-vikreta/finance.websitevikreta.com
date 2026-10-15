@@ -11,7 +11,7 @@ import { requireAuthAction } from "@/lib/server-auth";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-1 py-3 @lg:flex-row @lg:items-center @lg:justify-between">
       <dt className="text-body-sm text-muted-foreground">{label}</dt>
       <dd className="text-body-sm text-foreground">{children}</dd>
     </div>
@@ -52,9 +52,9 @@ async function Account() {
 export default function SettingsPage() {
   return (
     <AppShell>
-      <PageHeader title="Settings" description="Your account and how the ledger is set up." />
+      <PageHeader title="Settings" />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
         <Suspense fallback={<Skeleton className="h-64 rounded-xl" />}>
           <Account />
         </Suspense>
@@ -67,11 +67,8 @@ export default function SettingsPage() {
         </Card>
       </div>
 
-      <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-title-md">Data and session</h2>
-          <p className="mt-1 text-body-sm text-muted-foreground">Download every confirmed transaction, or sign out of this device.</p>
-        </div>
+      <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 @xl:flex-row @xl:items-center @xl:justify-between">
+        <h2 className="text-title-md">Data</h2>
         <div className="flex flex-wrap gap-3">
           <a href="/api/reports/export?period=all" className={buttonVariants({ variant: "outline" })}>
             <Download aria-hidden />
