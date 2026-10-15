@@ -10,6 +10,8 @@ interface TransactionSummaryCardProps {
   transaction: ConfirmationTransaction;
   isConfirmed?: boolean;
   isCancelled?: boolean;
+  /** Label for a card that is no longer actionable (default "Discarded"). */
+  discardedLabel?: string;
   isPendingAction?: boolean;
   onConfirm?: () => void;
   onEdit?: () => void;
@@ -20,6 +22,7 @@ export function TransactionSummaryCard({
   transaction,
   isConfirmed = false,
   isCancelled = false,
+  discardedLabel = "Discarded",
   isPendingAction = false,
   onConfirm,
   onEdit,
@@ -41,7 +44,7 @@ export function TransactionSummaryCard({
   return (
     <div
       className={cn(
-        "my-3 w-full rounded-xl border bg-card/90 p-4 transition-all shadow-sm",
+        "my-3 w-full rounded-xl border bg-card/90 p-4 transition-all",
         isConfirmed
           ? "border-success/40 bg-success/5"
           : isCancelled
@@ -83,7 +86,7 @@ export function TransactionSummaryCard({
           ) : isCancelled ? (
             <span className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
               <XCircle className="size-4" aria-hidden />
-              <span>Discarded</span>
+              <span>{discardedLabel}</span>
             </span>
           ) : (
             <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-caption font-medium text-primary">
@@ -109,7 +112,7 @@ export function TransactionSummaryCard({
         <div className="grid grid-cols-2 gap-3 rounded-lg border border-border/50 bg-background/50 p-3">
           <div>
             <p className="text-caption text-muted-foreground">Original Amount</p>
-            <p className="mt-0.5 text-title-sm font-mono font-bold tabular-nums text-foreground">
+            <p className="mt-0.5 text-title-sm font-mono font-semibold tabular-nums text-foreground">
               {isUSD ? "$" : "₹"}
               {formattedOriginalAmount}{" "}
               <span className="text-caption font-normal text-muted-foreground">
@@ -122,8 +125,8 @@ export function TransactionSummaryCard({
             <p className="text-caption text-muted-foreground">INR Equivalent</p>
             <p
               className={cn(
-                "mt-0.5 text-title-sm font-mono font-bold tabular-nums",
-                isIncome ? "text-income" : "text-expense"
+                "mt-0.5 text-title-sm font-mono font-semibold tabular-nums",
+                isIncome ? "text-success" : "text-foreground"
               )}
             >
               ₹{formattedInrAmount}
@@ -187,11 +190,13 @@ export function TransactionSummaryCard({
           </div>
         ) : isConfirmed ? (
           <p className="text-caption text-success/90">
-            Transaction confirmed. Ready for Phase 6 database persistence.
+            Saved to the ledger.
           </p>
         ) : (
           <p className="text-caption text-muted-foreground">
-            Transaction discarded. You can type a new transaction at any time.
+            {discardedLabel === "Discarded"
+              ? "Nothing was saved. You can type a new transaction at any time."
+              : "A newer summary replaced this one. Nothing was saved from it."}
           </p>
         )}
       </div>
