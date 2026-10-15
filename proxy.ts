@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession, SESSION_COOKIE } from "@/lib/auth";
+import { isActiveUser } from "@/lib/credentials";
 
 /**
  * Proxy — Next.js 16 route guard (replaces middleware.ts).
@@ -8,7 +9,7 @@ import { verifySession, SESSION_COOKIE } from "@/lib/auth";
  * Rules:
  * - /login and /api/auth/* are public (no session required).
  * - Everything else requires a valid session JWT in the session cookie.
- * - Invalid / expired token → cookie cleared + redirect to /login.
+ * - Invalid / expired token, or a removed member → cookie cleared + redirect to /login.
  *
  * NOTE (from Next.js docs): Server Functions (Server Actions) are handled as
  * POST requests to the route they live on. A proxy matcher that excludes a
@@ -27,7 +28,8 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
   }
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const session = token ? await verifySession(token) : null;
+  const verified = token ? await verifySession(token) : null;
+  const session = verified && (await isActiveUser(verified.userId)) ? verified : null;
 
   // If visiting /login:
   if (pathname === "/login") {
