@@ -26,6 +26,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { normalizeClientName } from "./clarify";
+import { CATEGORIES, toCategory } from "@/lib/transactions/categories";
 
 /** Keep a chat reply within the product's response budget (Google GenAI minimum deadline is 10s). */
 const GEMINI_TIMEOUT_MS = 10_000;
@@ -39,6 +40,8 @@ export interface ExtractionResult {
   client_name: string | null;
   expense_description: string | null;
   txn_date: string | null; // YYYY-MM-DD or null
+  /** Expense category picked from CATEGORIES (never asked for; the card shows it and the manager can correct it). */
+  category?: string | null;
 }
 
 export type ExtractionOutput =
@@ -112,6 +115,12 @@ const RESPONSE_SCHEMA = {
       nullable: true,
       description:
         "Transaction date in YYYY-MM-DD. Resolve 'today'/'yesterday' using provided date. null if date cannot be determined.",
+    },
+    category: {
+      type: Type.STRING,
+      nullable: true,
+      enum: [...CATEGORIES],
+      description: "Expense category that best fits what the money was spent on. null for income or when there is no expense description.",
     },
   },
   required: [
@@ -206,7 +215,15 @@ It applies to BOTH income and expense transactions.
 - "Acme paid $500 for design work" → "design work"
 - "Paid ₹12,000 for office rent" → "office rent"
 - "Paid 250 dollars for software subscription" → "software subscription"
-If no purpose or reason is stated → null.`;
+If no purpose or reason is stated → null.
+
+## category (expenses only)
+
+Pick the closest of: ${CATEGORIES.join(", ")}.
+- "office rent" → Rent, "Claude subscription" → Software & subscriptions, "AWS bill" → Cloud & hosting,
+  "pens" → Office supplies, "chai" → Food & refreshments, "internet bill" → Utilities.
+- If the manager names a category ("category is travel", "put it under marketing") → use it.
+- Use "Other" only when nothing fits. Income → null.`;
 }
 
 // ─── Validation ────────────────────────────────────────────────────────────
@@ -282,6 +299,7 @@ function validateExtraction(raw: unknown): ExtractionResult {
     client_name: normalizeClientName(obj.client_name as string | null),
     expense_description: obj.expense_description as string | null,
     txn_date: obj.txn_date as string | null,
+    category: obj.type === "income" ? null : toCategory(obj.category),
   };
 }
 

@@ -21,4 +21,6 @@ assert.equal(readableLabel("October 2026"), "in October 2026");
 assert.equal(readableLabel("this month"), "this month");
 assert.equal(readableLabel("last 7 days"), "last 7 days");
 assert.equal(readableLabel(""), "in that period");
+const oneGroup = { ...s, top: [{ type: "expense" as const, name: "Software & subscriptions", amount: 2899 }], expense: 2899, expenseCount: 2 };
+assert.equal(formatAnswer({ ...q, search: "software" }, oneGroup), "You spent ₹2,899 for “software” this month, across 2 transactions.");
 console.log("ask ok");

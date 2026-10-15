@@ -27,6 +27,8 @@ export interface LedgerRow {
   title: string;
   /** Purpose/notes; for income this is the optional description. */
   detail: string | null;
+  /** Expense category name; null for income (and for expenses saved before categories existed). */
+  category: string | null;
   originalAmount: number;
   originalCurrency: "INR" | "USD";
   amountInr: number;
@@ -93,6 +95,7 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
     type_id: number;
     title: string;
     detail: string | null;
+    category: string | null;
     original_amount: string;
     original_currency: "INR" | "USD";
     amount_inr: string;
@@ -108,10 +111,12 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
                 THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
                 ELSE coalesce(t.description, 'Expense') END AS title,
            CASE WHEN t.type_id = ${INCOME} THEN t.description END AS detail,
+           cat.name AS category,
            t.original_amount, t.original_currency, t.amount_inr, t.exchange_rate, t.source,
            to_char(t.deleted_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS deleted_at
     FROM transactions t
     LEFT JOIN clients c ON c.client_id = t.client_id
+    LEFT JOIN categories cat ON cat.id = t.category_id
     WHERE ${deleted ? RESTORABLE : sql`t.deleted_at IS NULL`}
     ORDER BY ${deleted ? sql`t.deleted_at DESC` : sql`t.txn_date DESC, t.created_at DESC`}
     ${limit ? sql`LIMIT ${limit}` : sql``}
@@ -124,6 +129,7 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
     type: r.type_id === INCOME ? "income" : "expense",
     title: r.title,
     detail: r.detail,
+    category: r.category,
     originalAmount: Number(r.original_amount),
     originalCurrency: r.original_currency,
     amountInr: Number(r.amount_inr),
@@ -188,13 +194,14 @@ export async function clientSummaries(): Promise<ClientSummary[]> {
   }));
 }
 
-/** Expenses grouped by description (case-insensitive) since `from` (YYYY-MM-DD), largest first. */
+/** Expenses grouped by category since `from` (YYYY-MM-DD), largest first. */
 export async function expenseBreakdown(from: string): Promise<Breakdown[]> {
   const data = await rows<{ name: string; amount: string; count: string }>(sql`
-    SELECT min(t.description) AS name, sum(t.amount_inr) AS amount, count(*) AS count
+    SELECT coalesce(cat.name, 'Uncategorized') AS name, sum(t.amount_inr) AS amount, count(*) AS count
     FROM transactions t
+    LEFT JOIN categories cat ON cat.id = t.category_id
     WHERE t.deleted_at IS NULL AND t.type_id = ${EXPENSE} AND t.txn_date >= ${from}::date
-    GROUP BY lower(trim(t.description))
+    GROUP BY 1
     ORDER BY amount DESC
   `);
   return data.map((r) => ({ name: r.name, amount: Number(r.amount), count: Number(r.count) }));
@@ -219,7 +226,7 @@ export interface RangeSummary {
   expense: number;
   incomeCount: number;
   expenseCount: number;
-  /** Largest groups (client for income, description for expenses), biggest first. */
+  /** Largest groups (client for income, category for expenses), biggest first. */
   top: { type: TxnType; name: string; amount: number }[];
 }
 
@@ -229,7 +236,7 @@ export interface RangeSummary {
  */
 export async function rangeSummary(from: string, to: string, search: string | null): Promise<RangeSummary> {
   const match = search
-    ? sql`AND (coalesce(c.client_name, t.client_name_snapshot, '') ILIKE ${`%${search}%`} OR coalesce(t.description, '') ILIKE ${`%${search}%`})`
+    ? sql`AND (coalesce(c.client_name, t.client_name_snapshot, '') ILIKE ${`%${search}%`} OR coalesce(t.description, '') ILIKE ${`%${search}%`} OR coalesce(cat.name, '') ILIKE ${`%${search}%`})`
     : sql``;
   const data = await rows<{ type_id: number; name: string; amount: string; count: string }>(sql`
     SELECT type_id, min(name) AS name, sum(amount_inr) AS amount, count(*) AS count
@@ -237,9 +244,10 @@ export async function rangeSummary(from: string, to: string, search: string | nu
       SELECT t.type_id, t.amount_inr,
              CASE WHEN t.type_id = ${INCOME}
                   THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
-                  ELSE coalesce(t.description, 'Expense') END AS name
+                  ELSE coalesce(cat.name, 'Uncategorized') END AS name
       FROM transactions t
       LEFT JOIN clients c ON c.client_id = t.client_id
+      LEFT JOIN categories cat ON cat.id = t.category_id
       WHERE t.deleted_at IS NULL AND t.txn_date BETWEEN ${from}::date AND ${to}::date ${match}
     ) r
     GROUP BY type_id, lower(trim(name))

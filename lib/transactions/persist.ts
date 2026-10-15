@@ -17,7 +17,8 @@
  */
 
 import { db } from "@/lib/db";
-import { appUsers, clients, transactions, auditEvents } from "@/lib/db/schema";
+import { appUsers, categories, clients, transactions, auditEvents } from "@/lib/db/schema";
+import { toCategory } from "@/lib/transactions/categories";
 import { eq, and, sql, isNull } from "drizzle-orm";
 import { getDraft, getSession, setSession, type ChatSessionState } from "@/lib/chatbot/store";
 import { validateExtraction } from "@/lib/chatbot/validate";
@@ -98,6 +99,7 @@ export function computeCanonicalPayloadHash(payload: {
  */
 export function mapRowToConfirmationTransaction(
   row: typeof transactions.$inferSelect,
+  category?: string | null,
 ): ConfirmationTransaction {
   return {
     id: row.id,
@@ -109,6 +111,7 @@ export function mapRowToConfirmationTransaction(
     txn_date: row.txnDate,
     exchange_rate: row.exchangeRate ? Number(row.exchangeRate) : null,
     inr_amount: Number(row.amountInr),
+    ...(category !== undefined ? { category } : {}),
   };
 }
 
@@ -203,6 +206,14 @@ export async function resolveClientId(tx: DbTx, clientName: string): Promise<str
     if (!recheck) throw err;
     return recheck;
   }
+}
+
+/** Category id for an expense: the named category if it is one of ours, else "Other". */
+export async function resolveCategoryId(tx: DbTx, name: string | null | undefined): Promise<{ id: number; name: string }> {
+  const wanted = toCategory(name) ?? "Other";
+  const [row] = await tx.select({ id: categories.id, name: categories.name }).from(categories).where(eq(categories.name, wanted));
+  if (!row) throw new Error(`Category "${wanted}" is missing; run the migrations.`);
+  return row;
 }
 
 /**
@@ -405,6 +416,7 @@ export async function confirmAndPersistTransaction(
       // Resolve client if income
       const clientNameSnapshot = typeId === 1 ? draft.client_name!.trim() : null;
       const clientId = clientNameSnapshot ? await resolveClientId(tx, clientNameSnapshot) : null;
+      const category = typeId === 2 ? await resolveCategoryId(tx, draft.category) : null;
 
       // Insert transaction
       const [insertedTxn] = await tx
@@ -420,6 +432,7 @@ export async function confirmAndPersistTransaction(
           exchangeRateDate,
           rateSource,
           description: typeId === 2 ? draft.expense_description!.trim() : null,
+          categoryId: category?.id ?? null,
           txnDate: draft.txn_date as string,
           source: params.source || "chatbot",
           status: "confirmed",
@@ -449,10 +462,10 @@ export async function confirmAndPersistTransaction(
         },
       });
 
-      return insertedTxn;
+      return { ...insertedTxn, categoryName: category?.name ?? null };
     });
 
-    const confirmedTransaction = mapRowToConfirmationTransaction(savedTxn);
+    const confirmedTransaction = mapRowToConfirmationTransaction(savedTxn, savedTxn.categoryName);
 
     // Update in-memory session only after DB commit succeeds
     rememberInChat({

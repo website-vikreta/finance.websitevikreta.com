@@ -105,7 +105,8 @@ export function formatAnswer(q: ParsedQuestion, s: RangeSummary): string {
   const count = q.metric === "income" ? s.incomeCount : s.expenseCount;
   if (!count) return `No ${q.metric === "income" ? "income" : "expenses"} recorded${scope} ${q.label}.`;
   const verb = q.metric === "income" ? "You received" : "You spent";
-  const biggest = count > 1 ? ` Biggest: ${top(q.metric)}.` : "";
+  const groups = s.top.filter((t) => t.type === q.metric).length;
+  const biggest = groups > 1 ? ` Biggest: ${top(q.metric)}.` : "";
   return `${verb} ${formatINR(total)}${scope} ${q.label}, across ${plural(count, "transaction")}.${biggest}`;
 }
 
