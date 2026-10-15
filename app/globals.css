@@ -201,3 +201,24 @@
     @apply font-sans;
   }
 }
+/* Floating Finance Chat Bot face: periodic blink + a bigger smile on hover. */
+@media (prefers-reduced-motion: no-preference) {
+  .bot-fab .bot-eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: bot-blink 4s ease-in-out infinite;
+  }
+  .bot-fab .bot-smile {
+    transform-box: fill-box;
+    transform-origin: center top;
+    transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .bot-fab:hover .bot-smile {
+    transform: scaleY(1.6);
+  }
+}
+
+@keyframes bot-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
