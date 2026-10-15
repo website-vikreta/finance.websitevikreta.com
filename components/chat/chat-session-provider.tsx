@@ -1,8 +1,11 @@
 "use client";
 
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { fetchCurrentChatState, resetChatSession, sendChatMessage, sendConfirmAction } from "./chat-api";
 import type { ChatMessage, ChatStatus, ExtractionResult } from "./types";
+
+const SAVED_MESSAGE = "Saved. It's in your transactions now.";
 
 interface ChatSessionContextValue {
   messages: ChatMessage[];
@@ -41,8 +44,17 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
   const isRequestInFlightRef = useRef(false);
   const stateRevisionRef = useRef(0);
 
+  const router = useRouter();
+
   const appendMessage = useCallback((message: ChatMessage) => {
     setMessages((previous) => [...previous, message]);
+  }, []);
+
+  /** Lock every open confirmation card so stale buttons can't act on a newer draft. */
+  const resolvePendingCards = useCallback((resolution: NonNullable<ChatMessage["resolution"]>) => {
+    setMessages((previous) =>
+      previous.map((m) => (m.confirmation && !m.resolution ? { ...m, resolution } : m)),
+    );
   }, []);
 
   const loadInitialState = useCallback(async () => {
@@ -90,8 +102,13 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
       setStatus(data.status);
       if (data.draft) setCurrentDraft(data.draft);
 
+      if (data.status === "CONFIRMED") resolvePendingCards("confirmed");
+      else if (data.status === "CANCELLED") resolvePendingCards("cancelled");
+      else if (data.status !== "READY_FOR_CONFIRMATION" || data.confirmation) resolvePendingCards("replaced");
+
       if (data.status === "CONFIRMED" && data.transaction) {
-        appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: "Transaction confirmed. The transaction is ready for Phase 6 database persistence.", timestamp: formatTime(), status: "CONFIRMED", confirmedTransaction: data.transaction });
+        appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: SAVED_MESSAGE, timestamp: formatTime(), status: "CONFIRMED", confirmedTransaction: data.transaction });
+        router.refresh();
       } else if (data.status === "CANCELLED") {
         appendMessage({ id: `assistant-cancelled-${Date.now()}`, role: "assistant", content: data.message || "Transaction discarded. Start a new message to record another.", timestamp: formatTime(), status: "CANCELLED" });
       } else if (data.status === "READY_FOR_CONFIRMATION" && data.confirmation) {
@@ -101,7 +118,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
         // READY_FOR_CONFIRMATION with question but no confirmation card (e.g. INR rate clarification)
         appendMessage({ id: `assistant-ask-${Date.now()}`, role: "assistant", content: data.question, timestamp: formatTime(), status: "READY_FOR_CONFIRMATION", draft: data.draft });
       } else if (data.status === "AWAITING_EXCHANGE_RATE") {
-        appendMessage({ id: `assistant-rate-${Date.now()}`, role: "assistant", content: data.question || "Enter the USD to INR exchange rate (e.g. 88.50). Rate service is unavailable. Please enter the rate by hand.", timestamp: formatTime(), status: "AWAITING_EXCHANGE_RATE", isRatePrompt: true });
+        appendMessage({ id: `assistant-rate-${Date.now()}`, role: "assistant", content: data.question || "What USD → INR rate should I use? Send just the number, e.g. 88.50.", timestamp: formatTime(), status: "AWAITING_EXCHANGE_RATE", isRatePrompt: true });
       } else {
         appendMessage({ id: `assistant-ask-${Date.now()}`, role: "assistant", content: data.validation?.question || data.question || "Please provide the missing transaction details.", timestamp: formatTime(), status: "COLLECTING", draft: data.draft, validation: data.validation });
       }
@@ -109,7 +126,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
       isRequestInFlightRef.current = false;
     }
-  }, [appendMessage]);
+  }, [appendMessage, resolvePendingCards, router]);
 
   const confirmAction = useCallback(async (action: "CONFIRM" | "CANCEL" | "EDIT") => {
     if (isRequestInFlightRef.current) return;
@@ -134,8 +151,10 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
       }
 
       setStatus(data.status);
+      resolvePendingCards(action === "CONFIRM" ? "confirmed" : action === "CANCEL" ? "cancelled" : "replaced");
       if (action === "CONFIRM" && data.transaction) {
-        appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: "Transaction confirmed. The transaction is ready for Phase 6 database persistence.", timestamp: formatTime(), status: "CONFIRMED", confirmedTransaction: data.transaction });
+        appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: SAVED_MESSAGE, timestamp: formatTime(), status: "CONFIRMED", confirmedTransaction: data.transaction });
+        router.refresh();
       } else if (action === "CANCEL") {
         setCurrentDraft(null);
         appendMessage({ id: `assistant-cancelled-${Date.now()}`, role: "assistant", content: data.message || "Transaction discarded. Start a new message to record another.", timestamp: formatTime(), status: "CANCELLED" });
@@ -147,7 +166,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
       setIsPendingAction(false);
       isRequestInFlightRef.current = false;
     }
-  }, [appendMessage]);
+  }, [appendMessage, resolvePendingCards, router]);
 
   const resetConversation = useCallback(async () => {
     if (isRequestInFlightRef.current) return;
