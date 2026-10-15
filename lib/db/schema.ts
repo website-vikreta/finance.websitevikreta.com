@@ -4,7 +4,6 @@ import {
   varchar,
   text,
   integer,
-  bigint,
   numeric,
   date,
   timestamp,
