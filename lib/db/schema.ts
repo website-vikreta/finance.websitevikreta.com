@@ -1,5 +1,6 @@
 import {
   pgTable,
+  serial,
   uuid,
   varchar,
   text,
@@ -52,6 +53,13 @@ export const clients = pgTable(
   ],
 ).enableRLS();
 
+// ─── 2b. CATEGORIES (Expense categories; list in lib/transactions/categories.ts) ─
+export const categories = pgTable("categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}).enableRLS();
+
 // ─── 3. TRANSACTION TYPES (Lookup: 1 = income, 2 = expense) ──────────────────
 export const transactionTypes = pgTable(
   "transaction_types",
@@ -86,6 +94,7 @@ export const transactions = pgTable(
     rateSource: varchar("rate_source", { length: 50 }), // Nullable; 'manual' for USD
 
     description: text("description"),
+    categoryId: integer("category_id").references(() => categories.id), // Expenses only; NULL for income
     txnDate: date("txn_date").notNull(),
 
     source: varchar("source", { length: 50 }).notNull(), // "chatbot" | "manual" | "bank_import"
@@ -109,6 +118,7 @@ export const transactions = pgTable(
     index("idx_transactions_client_id").on(table.clientId),
     index("idx_transactions_deleted_at").on(table.deletedAt),
     index("idx_transactions_source").on(table.source),
+    index("idx_transactions_category_id").on(table.categoryId),
 
     check(
       "chk_transactions_amounts",
