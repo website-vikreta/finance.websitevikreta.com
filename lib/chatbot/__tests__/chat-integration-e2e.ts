@@ -13,7 +13,7 @@
  *   9. Authentication & session isolation
  *  10. Reset & lifecycle state management
  *
- * Run: npx tsx src/lib/chatbot/__tests__/chat-integration-e2e.ts
+ * Run: npx tsx lib/chatbot/__tests__/chat-integration-e2e.ts
  */
 
 import { NextRequest } from "next/server";
@@ -374,7 +374,7 @@ async function runAllTests() {
 
     assert("Greeting returns 200", greetingRes.status === 200);
     assert("Status remains COLLECTING", greetingJson.status === "COLLECTING");
-    assert("Warm greeting response returned", greetingJson.question?.includes("Hello! 👋 What would you like to record today") === true);
+    assert("Warm greeting response returned", greetingJson.question?.includes("What do you want to record") === true);
     assert("No premature validation error triggered", greetingJson.ok === true);
   }
 

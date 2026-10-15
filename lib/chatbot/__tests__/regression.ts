@@ -4,7 +4,7 @@
  * Tests the merge engine, validation engine, rate parser, and confirmation
  * builder locally — no Gemini calls, no HTTP, no database.
  *
- * Run:  npx tsx src/lib/chatbot/__tests__/regression.ts
+ * Run:  npx tsx lib/chatbot/__tests__/regression.ts
  *
  * Exit 0 = all pass. Non-zero = failures.
  */
