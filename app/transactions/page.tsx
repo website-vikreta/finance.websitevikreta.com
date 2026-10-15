@@ -6,11 +6,9 @@ import { TRANSACTIONS, type Transaction } from "@/lib/mock-data";
 import { formatINR } from "@/lib/format";
 import {
   Search,
-  Filter,
   ArrowDownLeft,
   ArrowUpRight,
   Plus,
-  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +17,7 @@ import { toast } from "sonner";
 export default function TransactionsPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "in" | "out">("all");
-  const [transactions, setTransactions] = useState<Transaction[]>(TRANSACTIONS);
+  const [transactions] = useState<Transaction[]>(TRANSACTIONS);
 
   const filtered = transactions.filter((t) => {
     const matchesSearch =
