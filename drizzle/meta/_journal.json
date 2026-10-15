@@ -36,6 +36,13 @@
       "when": 1792087933940,
       "tag": "0004_members_password",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792098321686,
+      "tag": "0005_admin_role",
+      "breakpoints": true
     }
   ]
 }

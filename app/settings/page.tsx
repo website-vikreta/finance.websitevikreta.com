@@ -7,6 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { db } from "@/lib/db";
 import { appUsers } from "@/lib/db/schema";
+import { isAdmin } from "@/lib/credentials";
 import { requireAuthAction } from "@/lib/server-auth";
 import { cn } from "@/lib/utils";
 import { AddMemberForm } from "./add-member-form";
@@ -56,9 +57,11 @@ async function Account() {
 
 async function Members() {
   const auth = await requireAuthAction();
-  const me = auth.ok ? auth.session.userId : null;
+  // Managers don't see member management at all; the actions refuse them too.
+  if (!auth.ok || !(await isAdmin(auth.session.userId))) return null;
+  const me = auth.session.userId;
   const members = await db
-    .select({ id: appUsers.id, email: appUsers.email })
+    .select({ id: appUsers.id, email: appUsers.email, role: appUsers.role })
     .from(appUsers)
     .where(and(eq(appUsers.isActive, true), isNotNull(appUsers.email)))
     .orderBy(asc(appUsers.createdAt));
@@ -69,7 +72,10 @@ async function Members() {
       <ul className="mt-3 divide-y divide-border">
         {members.map((m) => (
           <li key={m.id} className="flex items-center justify-between gap-3 py-3 text-body-sm text-foreground">
-            <span className="truncate">{m.email}</span>
+            <span className="min-w-0 truncate">
+              {m.email}
+              <span className="ml-2 text-caption text-muted-foreground capitalize">{m.id === "admin" ? "admin" : m.role}</span>
+            </span>
             {m.id === "admin" ? (
               <span className="text-caption text-muted-foreground">Primary</span>
             ) : m.id === me ? (
