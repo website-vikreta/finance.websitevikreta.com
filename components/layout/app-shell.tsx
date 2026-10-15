@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
 import { Navbar } from "./navbar";
 import { Sidebar } from "./sidebar";
 import { FinanceAIDrawer } from "@/components/chat/finance-ai-drawer";
@@ -10,6 +10,13 @@ import { cn } from "@/lib/utils";
 
 interface AppShellProps {
   children: React.ReactNode;
+}
+
+const OpenFinanceAIContext = createContext<() => void>(() => {});
+
+/** Opens the Finance AI panel from anywhere inside the shell (e.g. a "New transaction" button). */
+export function useOpenFinanceAI() {
+  return useContext(OpenFinanceAIContext);
 }
 
 /** Min/max chat panel widths in pixels. */
@@ -160,7 +167,7 @@ export function AppShell({ children }: AppShellProps) {
           )}
         >
           <div className="mx-auto max-w-7xl space-y-6">
-            {children}
+            <OpenFinanceAIContext.Provider value={handleOpenFinanceAI}>{children}</OpenFinanceAIContext.Provider>
           </div>
         </main>
 
