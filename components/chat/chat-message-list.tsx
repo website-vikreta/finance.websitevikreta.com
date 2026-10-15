@@ -82,12 +82,8 @@ export function ChatMessageList({
 
           <div className="min-w-0 flex-1 space-y-2.5">
             <div className="rounded-xl border border-border bg-card p-4 text-foreground">
-              <h3 className="text-title-sm text-foreground">
-                Welcome to Finance Chat Bot! 👋
-              </h3>
-              <p className="mt-1.5 text-body-sm text-muted-foreground leading-relaxed">
-                I’m your virtual finance assistant. I’m here to help you manage your income and expenses, record transaction details, handle multiple currencies, and guide you through the transaction confirmation process. Let’s get started!
-              </p>
+              <p className="text-body-sm text-foreground">Tell me about an income or expense.</p>
+              <p className="mt-1 text-body-sm text-muted-foreground">e.g. &ldquo;Paid ₹5,000 for office rent today&rdquo;</p>
               <div className="mt-2.5 flex justify-end">
                 <span className="text-micro font-mono text-muted-foreground/70">
                   {welcomeTime || "06:07 PM"}
@@ -196,7 +192,7 @@ export function ChatMessageList({
       {isPostConfirmationOrCancel && (
         <div className="flex flex-col items-start pl-9 pt-1">
           <p className="text-micro font-mono text-muted-foreground mb-1.5">
-            Start next transaction:
+            Record another:
           </p>
           <QuickActions disabled={isLoading || isPendingAction} onQuickAction={onQuickAction} />
         </div>

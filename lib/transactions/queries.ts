@@ -59,7 +59,31 @@ async function rows<T>(query: ReturnType<typeof sql>): Promise<T[]> {
   return result.rows as T[];
 }
 
+export interface DeletedRow extends LedgerRow {
+  deletedAt: string;
+}
+
 export async function listLedger(limit?: number): Promise<LedgerRow[]> {
+  return listRows(false, limit);
+}
+
+/**
+ * Deleted in the last 30 days through the app. Maintenance cleanups (audit metadata
+ * carries a "reason", e.g. test-suite rows) are not offered for restore.
+ */
+const RESTORABLE = sql`t.deleted_at IS NOT NULL
+  AND t.deleted_at > now() - interval '30 days'
+  AND NOT EXISTS (
+    SELECT 1 FROM audit_events a
+    WHERE a.entity_id = t.id::text AND a.action = 'deleted' AND a.metadata ? 'reason'
+  )`;
+
+/** Soft-deleted transactions that can still be restored, most recently deleted first. */
+export async function listDeleted(limit = 20): Promise<DeletedRow[]> {
+  return listRows(true, limit) as Promise<DeletedRow[]>;
+}
+
+async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> {
   const data = await rows<{
     id: string;
     date: string;
@@ -71,6 +95,7 @@ export async function listLedger(limit?: number): Promise<LedgerRow[]> {
     amount_inr: string;
     exchange_rate: string | null;
     source: string;
+    deleted_at: string | null;
   }>(sql`
     SELECT t.id,
            to_char(t.txn_date, 'YYYY-MM-DD') AS date,
@@ -79,11 +104,12 @@ export async function listLedger(limit?: number): Promise<LedgerRow[]> {
                 THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
                 ELSE coalesce(t.description, 'Expense') END AS title,
            CASE WHEN t.type_id = ${INCOME} THEN t.description END AS detail,
-           t.original_amount, t.original_currency, t.amount_inr, t.exchange_rate, t.source
+           t.original_amount, t.original_currency, t.amount_inr, t.exchange_rate, t.source,
+           to_char(t.deleted_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS deleted_at
     FROM transactions t
     LEFT JOIN clients c ON c.client_id = t.client_id
-    WHERE t.deleted_at IS NULL
-    ORDER BY t.txn_date DESC, t.created_at DESC
+    WHERE ${deleted ? RESTORABLE : sql`t.deleted_at IS NULL`}
+    ORDER BY ${deleted ? sql`t.deleted_at DESC` : sql`t.txn_date DESC, t.created_at DESC`}
     ${limit ? sql`LIMIT ${limit}` : sql``}
   `);
 
@@ -98,6 +124,7 @@ export async function listLedger(limit?: number): Promise<LedgerRow[]> {
     amountInr: Number(r.amount_inr),
     exchangeRate: r.exchange_rate === null ? null : Number(r.exchange_rate),
     source: r.source,
+    ...(r.deleted_at ? { deletedAt: r.deleted_at } : {}),
   }));
 }
 

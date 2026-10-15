@@ -173,3 +173,15 @@ export const auditEvents = pgTable(
     index("idx_audit_events_performer").on(table.performedBy),
   ],
 ).enableRLS();
+
+// ─── 6. CHAT SESSIONS (Finance AI draft + state machine, one row per user) ───
+// Persisted so a half-entered transaction survives restarts and works across
+// server instances. Nothing financial lives here until it is confirmed.
+export const chatSessions = pgTable("chat_sessions", {
+  userId: varchar("user_id", { length: 64 })
+    .primaryKey()
+    .references(() => appUsers.id),
+  draft: jsonb("draft").notNull(),
+  session: jsonb("session").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date", precision: 3 }).notNull().defaultNow(),
+}).enableRLS();

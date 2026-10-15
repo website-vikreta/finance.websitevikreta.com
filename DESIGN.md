@@ -103,7 +103,7 @@ Inter carries every role; JetBrains Mono is for money, rates and IDs (always wit
 | Body | `text-body-sm` | 14 / 1.55 | Tables, descriptions (UI default) |
 | Meta | `text-caption` | 13 / 1.4, 500 | Badges, sub-lines, footers |
 | Micro | `text-micro` | 11 / 1.4, 500 | Chat timestamps and tiny status badges only |
-| Label | `text-eyebrow` | 12, +1.5px, 600, uppercase copy | Stat labels, table headers |
+| Label | `text-caption` | 13, 500, sentence case | Stat labels, table headers |
 
 Each type class sets size, line-height, tracking and weight together; don't stack `font-bold` or `tracking-*` on top.
 
@@ -146,3 +146,4 @@ Each type class sets size, line-height, tracking and weight together; don't stac
 - Don't invent sizes, radii or colors. Add a token to `globals.css`, this file and `.ai/standards/design-system.md` together.
 - Don't show made-up numbers. If there's no data or no backend yet, say so.
 - Don't add dot patterns, textures, gradients, illustrations or decorative shapes.
+- Don't add eyebrow labels, taglines, hero copy or explainer sentences. Title plus data; keep words to what the reader needs to act.

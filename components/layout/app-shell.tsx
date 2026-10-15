@@ -37,17 +37,11 @@ export function AppShell({ children }: AppShellProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const handleOpenFinanceAI = () => {
-    if (typeof window !== "undefined" && window.innerWidth >= 768 && window.innerWidth < 1024) {
+    // Docked panel (>=1280px) next to a full sidebar leaves little room below 1536px: fold the sidebar to icons.
+    if (typeof window !== "undefined" && window.innerWidth >= 1280 && window.innerWidth < 1536) {
       setSidebarCollapsed(true);
     }
     setFinanceAIOpen(true);
-  };
-
-  const handleToggleFinanceAI = () => {
-    if (!financeAIOpen && typeof window !== "undefined" && window.innerWidth >= 768 && window.innerWidth < 1024) {
-      setSidebarCollapsed(true);
-    }
-    setFinanceAIOpen((v) => !v);
   };
 
   const [isResizing, setIsResizing] = useState(false);
@@ -124,8 +118,8 @@ export function AppShell({ children }: AppShellProps) {
     const handleResize = () => {
       if (typeof window === "undefined") return;
       const viewportW = window.innerWidth;
-      // On mobile, the panel is full-width overlay — skip clamping
-      if (viewportW < 768) return;
+      // Below 1280px the panel is an overlay sheet — skip clamping
+      if (viewportW < 1280) return;
       // Ensure panel doesn't exceed 60% of viewport
       const maxAllowed = Math.min(CHAT_MAX_WIDTH, Math.floor(viewportW * 0.6));
       setChatWidth((w) => Math.min(maxAllowed, Math.max(CHAT_MIN_WIDTH, w)));
@@ -139,8 +133,6 @@ export function AppShell({ children }: AppShellProps) {
       {/* Top Navbar */}
       <Navbar
         onToggleSidebar={() => setMobileSidebarOpen((v) => !v)}
-        onOpenFinanceAI={handleToggleFinanceAI}
-        isFinanceAIOpen={financeAIOpen}
       />
 
       <div ref={containerRef} className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -159,7 +151,7 @@ export function AppShell({ children }: AppShellProps) {
             financeAIOpen ? "p-4 md:p-6" : "p-4 md:p-8"
           )}
         >
-          <div className="mx-auto max-w-7xl space-y-6">
+          <div className="@container mx-auto max-w-7xl space-y-6">
             <OpenFinanceAIContext.Provider value={handleOpenFinanceAI}>{children}</OpenFinanceAIContext.Provider>
           </div>
         </main>
@@ -171,10 +163,10 @@ export function AppShell({ children }: AppShellProps) {
             onClick={handleOpenFinanceAI}
             variant="outline"
             aria-label="Open Finance Chat Bot"
-            className="fixed right-6 bottom-6 z-30 bg-card shadow-md"
+            className="fixed right-4 bottom-4 z-30 bg-card shadow-md sm:right-6 sm:bottom-6"
           >
             <Sparkles aria-hidden />
-            Ask Finance Chat Bot
+            <span className="hidden sm:inline">Ask Finance Chat Bot</span>
           </Button>
         )}
 
@@ -194,7 +186,7 @@ export function AppShell({ children }: AppShellProps) {
             onKeyDown={onKeyDown}
             onDoubleClick={onResetChat}
             className={cn(
-              "relative hidden md:flex flex-col items-center justify-center",
+              "relative hidden xl:flex flex-col items-center justify-center",
               "w-2.5 shrink-0 cursor-col-resize select-none",
               "border-l border-r border-border/40",
               "bg-surface-soft hover:bg-primary/10 active:bg-primary/20",

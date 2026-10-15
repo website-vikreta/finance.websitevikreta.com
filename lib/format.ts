@@ -70,12 +70,6 @@ export function percentChange(current: number, previous: number): number | null 
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
-export function formatCurrentHeroDate(date: Date = new Date()): string {
-  const weekday = date.toLocaleDateString("en-IN", { weekday: "long" });
-  const day = date.getDate();
-  const month = date.toLocaleDateString("en-IN", { month: "long" });
-  return `${weekday}, ${day} ${month} · All figures shown in INR unless noted.`;
-}
 
 /** Share of a total for labels: "<1%" for tiny non-zero parts so they never read as nothing. */
 export function formatShare(part: number, total: number): string {

@@ -36,6 +36,13 @@ import { EMPTY_DRAFT } from "./merge";
 const store = new Map<string, ExtractionResult>();
 
 /**
+ * When this instance last changed each user's chat state (ms epoch). Lets the
+ * persistence layer (lib/chatbot/persistence.ts) tell whether the DB copy is newer.
+ */
+const changedAt = new Map<string, number>();
+const touch = (userId: string) => changedAt.set(userId, Date.now());
+
+/**
  * Returns the current draft for a user.
  * Returns a fresh empty draft if no draft exists yet.
  */
@@ -48,6 +55,7 @@ export function getDraft(userId: string): ExtractionResult {
  */
 export function setDraft(userId: string, draft: ExtractionResult): void {
   store.set(userId, draft);
+  touch(userId);
 }
 
 /**
@@ -56,6 +64,7 @@ export function setDraft(userId: string, draft: ExtractionResult): void {
  */
 export function clearDraft(userId: string): void {
   store.delete(userId);
+  touch(userId);
 }
 
 // ─── Session store (Phase 4/5 — new) ─────────────────────────────────────────
@@ -108,6 +117,7 @@ export function getSession(userId: string): ChatSessionState {
  */
 export function setSession(userId: string, state: ChatSessionState): void {
   sessionStore.set(userId, state);
+  touch(userId);
 }
 
 /**
@@ -115,6 +125,7 @@ export function setSession(userId: string, state: ChatSessionState): void {
  */
 export function clearSession(userId: string): void {
   sessionStore.delete(userId);
+  touch(userId);
 }
 
 // ─── Combined reset ───────────────────────────────────────────────────────────
@@ -128,4 +139,24 @@ export function clearSession(userId: string): void {
 export function clearAll(userId: string): void {
   clearDraft(userId);
   clearSession(userId);
+}
+
+// ─── Snapshot (used by lib/chatbot/persistence.ts) ───────────────────────────
+
+export interface ChatSnapshot {
+  draft: ExtractionResult;
+  session: ChatSessionState;
+  /** ms epoch of the last change; 0 when this instance has never seen the user. */
+  changedAt: number;
+}
+
+export function exportChatState(userId: string): ChatSnapshot {
+  return { draft: getDraft(userId), session: getSession(userId), changedAt: changedAt.get(userId) ?? 0 };
+}
+
+/** Replaces this instance's copy with a newer one loaded from the database. */
+export function importChatState(userId: string, snapshot: ChatSnapshot): void {
+  store.set(userId, snapshot.draft);
+  sessionStore.set(userId, snapshot.session);
+  changedAt.set(userId, snapshot.changedAt);
 }

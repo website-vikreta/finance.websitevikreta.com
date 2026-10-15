@@ -14,7 +14,7 @@
  *
  * Cleanup: All test data is cleaned up in a finally block, leaving 0 temporary test records.
  *
- * Run: npx tsx src/lib/transactions/__tests__/persistence.test.ts
+ * Run: npx tsx lib/transactions/__tests__/persistence.test.ts
  */
 
 import { NextRequest } from "next/server";
@@ -1010,7 +1010,8 @@ async function runPersistenceSuite() {
         await db.execute(sql`DELETE FROM "clients" WHERE "client_name" = ${name}`);
       }
 
-      // 4. Delete test user
+      // 4. Delete chat sessions and test user
+      await db.execute(sql`DELETE FROM "chat_sessions" WHERE "user_id" = ${TEST_USER}`);
       await db.execute(sql`DELETE FROM "app_users" WHERE "id" = ${TEST_USER}`);
       console.log("✓ Cleanup finished cleanly. Development database restored.");
     } catch (cleanupErr) {
