@@ -16,7 +16,7 @@ Entering a transaction takes seconds (form or chatbot). Reading the numbers take
 - **Money is exact.** Integer minor units, stored rate per transaction, INR is the base currency. See `.ai/standards/data-safety.md`.
 - **Nothing saves silently.** Chatbot entries always show a confirm card first.
 - **Every write is audited**, every delete is soft.
-- shadcn/ui (Base UI) primitives in `src/components/ui/` first. Build custom only when no primitive fits.
+- shadcn/ui (Base UI) primitives in `components/ui/` first. Build custom only when no primitive fits.
 - Tokens only. No raw hex in components.
 - Speed: dashboard under 3 s, chat reply under 5 s.
 - Uniformity. Reuse logged conventions in `.ai/learning.md`. Never reinvent spacing/type/color per screen.
