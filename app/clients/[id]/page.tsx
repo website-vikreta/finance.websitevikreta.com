@@ -334,6 +334,44 @@ async function ClientProfileView({ params }: { params: Promise<{ id: string }> }
           )}
         </div>
       </section>
+
+      <section className="space-y-4">
+        <h2 className="text-title-md">Monthly bills ({client.bills.length})</h2>
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          {client.bills.length === 0 ? (
+            <p className="px-6 py-12 text-center text-body-sm text-muted-foreground">No monthly bills tagged to {client.name}.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-body-sm">
+                <thead className="border-b border-border bg-muted/60 text-caption text-muted-foreground">
+                  <tr>
+                    <th scope="col" className="px-4 py-3 font-medium">Bill</th>
+                    <th scope="col" className="px-4 py-3 font-medium">Next due</th>
+                    <th scope="col" className="px-4 py-3 font-medium">Ends</th>
+                    <th scope="col" className="px-4 py-3 font-medium text-right">Every month</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {client.bills.map((b) => (
+                    <tr key={b.id} className="hover:bg-accent/40">
+                      <td className="px-4 py-3">
+                        <Link href={`/transactions/recurring/${b.id}`} className="font-medium text-foreground hover:underline">
+                          {b.description}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{b.isActive ? formatDate(b.nextDue) : "Paused"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{b.endDate ? formatDate(b.endDate) : "Ongoing"}</td>
+                      <td className="px-4 py-3 text-right font-mono tabular-nums text-foreground">
+                        {b.currency === "USD" ? `$${b.amount.toLocaleString("en-US")}` : formatINR(b.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
     </>
   );
 }
@@ -354,6 +392,7 @@ function ClientSkeleton() {
       <Skeleton className="h-64 rounded-xl" />
       <Skeleton className="h-64 rounded-xl" />
       <Skeleton className="h-64 rounded-xl" />
+      <Skeleton className="h-48 rounded-xl" />
     </div>
   );
 }

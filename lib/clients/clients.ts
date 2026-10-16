@@ -9,7 +9,7 @@
 
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { auditEvents, categories, clients, invoices, transactions } from "@/lib/db/schema";
+import { auditEvents, categories, clients, invoices, recurringExpenses, transactions } from "@/lib/db/schema";
 import { balanceOf, displayStatus, STATES, type DisplayStatus } from "@/lib/invoices/math";
 import { todayInIndia } from "@/lib/transactions/period";
 
@@ -79,6 +79,8 @@ export interface ClientDetail extends ClientProfile {
   invoices: ClientInvoiceSummary[];
   payments: ClientPaymentSummary[];
   expenses: ClientExpenseSummary[];
+  /** Recurring bills tagged to this client that are still running (active or paused). */
+  bills: { id: string; description: string; amount: number; currency: "INR" | "USD"; nextDue: string; endDate: string | null; isActive: boolean }[];
 }
 
 export type Result<T = { id: string }> =
@@ -375,8 +377,22 @@ export async function getClient(id: string): Promise<ClientDetail | null> {
     .where(and(eq(transactions.clientId, id), isNull(transactions.deletedAt), eq(transactions.typeId, 2)))
     .orderBy(desc(transactions.txnDate), desc(transactions.createdAt));
 
-  // One round trip's wait instead of four (the database is remote).
-  const [[row], txRows, invRows, expRows] = await Promise.all([rowQuery, txQuery, invQuery, expQuery]);
+  const billQuery = db
+    .select({
+      id: recurringExpenses.id,
+      description: recurringExpenses.description,
+      amount: recurringExpenses.originalAmount,
+      currency: recurringExpenses.originalCurrency,
+      nextDue: recurringExpenses.nextDue,
+      endDate: recurringExpenses.endDate,
+      isActive: recurringExpenses.isActive,
+    })
+    .from(recurringExpenses)
+    .where(and(eq(recurringExpenses.clientId, id), isNull(recurringExpenses.deletedAt)))
+    .orderBy(recurringExpenses.nextDue);
+
+  // One round trip's wait instead of five (the database is remote).
+  const [[row], txRows, invRows, expRows, billRows] = await Promise.all([rowQuery, txQuery, invQuery, expQuery, billQuery]);
   if (!row) return null;
 
   const today = todayInIndia();
@@ -459,6 +475,7 @@ export async function getClient(id: string): Promise<ClientDetail | null> {
     invoices: clientInvoices,
     payments,
     expenses,
+    bills: billRows.map((b) => ({ ...b, amount: Number(b.amount), currency: b.currency as "INR" | "USD" })),
   };
 }
 
