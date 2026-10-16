@@ -186,7 +186,25 @@ export function computeAmounts(
   }
 }
 
-type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The active client with this name, ignoring case and outer spaces; null if there is none. */
+export async function findClient(tx: DbTx, clientName: string): Promise<{ id: string; name: string } | null> {
+  const [found] = await tx
+    .select({ id: clients.clientId, name: clients.clientName })
+    .from(clients)
+    .where(and(isNull(clients.deletedAt), sql`lower(trim(both from ${clients.clientName})) = ${clientName.trim().toLowerCase()}`));
+  return found ?? null;
+}
+
+/** Income creates its client if new; an expense's client tag only links to an existing client. */
+export async function linkClient(tx: DbTx, typeId: number, name: string | null | undefined): Promise<{ clientId: string | null; clientNameSnapshot: string | null }> {
+  const trimmed = name?.trim();
+  if (!trimmed) return { clientId: null, clientNameSnapshot: null };
+  if (typeId === 1) return { clientId: await resolveClientId(tx, trimmed), clientNameSnapshot: trimmed };
+  const found = await findClient(tx, trimmed);
+  return { clientId: found?.id ?? null, clientNameSnapshot: found?.name ?? null };
+}
 
 /** Finds the active client by normalised name, or creates it (race-safe on the unique index). */
 export async function resolveClientId(tx: DbTx, clientName: string): Promise<string> {
@@ -467,6 +485,9 @@ export async function confirmAndPersistTransaction(
         },
       });
 
+      const rejected = await params.onSaved?.(tx, insertedTxn.id);
+      if (rejected) throw new SaveRejected(rejected);
+
       return { ...insertedTxn, categoryName: category?.name ?? null };
     });
 
@@ -486,6 +507,7 @@ export async function confirmAndPersistTransaction(
       transaction: confirmedTransaction,
     };
   } catch (err: unknown) {
+    if (err instanceof SaveRejected) return { ok: false, error: err.message, code: "CONFLICT", status: 409 };
     // Handle concurrent duplicate insertion
     if (isUniqueConstraintViolation(err)) {
       try {

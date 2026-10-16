@@ -15,8 +15,10 @@ import {
   computeAmounts,
   computeCanonicalPayloadHash,
   confirmAndPersistTransaction,
+  linkClient,
   resolveCategoryId,
   resolveClientId,
+  type PersistConfirmationParams,
   type PersistError,
 } from "@/lib/transactions/persist";
 import { duplicateMessage, findDuplicate } from "@/lib/transactions/duplicates";
@@ -94,6 +96,7 @@ export async function createManualTransaction(
   idempotencyKey: string,
   allowDuplicate = false,
   invoice?: { id: string; note: string },
+  onSaved?: PersistConfirmationParams["onSaved"],
 ): Promise<ManageResult> {
   const parsed = toDraft(raw);
   if (!parsed.ok) return parsed;
