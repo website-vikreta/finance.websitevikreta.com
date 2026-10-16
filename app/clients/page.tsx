@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { AppShell } from "@/components/layout/app-shell";
 import { NewTransactionButton } from "@/components/layout/new-transaction-button";
 import { PageHeader } from "@/components/layout/page-header";
@@ -7,11 +8,14 @@ import { ClientsGrid } from "@/components/clients/clients-grid";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatINR } from "@/lib/format";
 import { clientSummaries } from "@/lib/transactions/queries";
+import { receivables } from "@/lib/invoices/invoices";
+import { todayInIndia } from "@/lib/transactions/period";
 
 export const metadata = { title: "Clients" };
 
 async function ClientsData() {
-  const clients = await clientSummaries();
+  await connection(); // overdue is relative to today
+  const [clients, owed] = await Promise.all([clientSummaries(), receivables(todayInIndia())]);
   const totalReceived = clients.reduce((s, c) => s + c.totalReceived, 0);
   const payments = clients.reduce((s, c) => s + c.payments, 0);
 
@@ -31,7 +35,7 @@ async function ClientsData() {
           </p>
         </div>
       ) : (
-        <ClientsGrid clients={clients} />
+        <ClientsGrid clients={clients} owed={Object.fromEntries(owed.byClient)} />
       )}
     </>
   );
