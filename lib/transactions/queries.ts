@@ -50,7 +50,13 @@ export interface MonthTotals {
 export interface ClientSummary {
   id: string;
   name: string;
+  email: string | null;
+  gstin: string | null;
+  state: string | null;
+  country: string;
   totalReceived: number;
+  totalExpenses: number;
+  netMargin: number;
   payments: number;
   lastPaymentDate: string | null;
   firstSeen: string;
@@ -179,32 +185,49 @@ export async function clientSummaries(): Promise<ClientSummary[]> {
   const data = await rows<{
     id: string;
     name: string;
+    email: string | null;
+    gstin: string | null;
+    state: string | null;
+    country: string;
     total: string;
+    expenses: string;
     payments: string;
     last_payment: string | null;
     first_seen: string;
   }>(sql`
     SELECT c.client_id AS id, c.client_name AS name,
-           coalesce(sum(t.amount_inr), 0) AS total,
-           count(t.id) AS payments,
-           to_char(max(t.txn_date), 'YYYY-MM-DD') AS last_payment,
+           c.email, c.gstin, c.state, c.country,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${INCOME}), 0) AS total,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${EXPENSE}), 0) AS expenses,
+           count(t.id) FILTER (WHERE t.type_id = ${INCOME}) AS payments,
+           to_char(max(t.txn_date) FILTER (WHERE t.type_id = ${INCOME}), 'YYYY-MM-DD') AS last_payment,
            to_char(c.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS first_seen
     FROM clients c
     LEFT JOIN transactions t
-      ON t.client_id = c.client_id AND t.deleted_at IS NULL AND t.type_id = ${INCOME}
+      ON t.client_id = c.client_id AND t.deleted_at IS NULL
     WHERE c.deleted_at IS NULL
     GROUP BY c.client_id
     ORDER BY total DESC, c.client_name
   `);
 
-  return data.map((r) => ({
-    id: r.id,
-    name: r.name,
-    totalReceived: Number(r.total),
-    payments: Number(r.payments),
-    lastPaymentDate: r.last_payment,
-    firstSeen: r.first_seen,
-  }));
+  return data.map((r) => {
+    const totalReceived = Number(r.total);
+    const totalExpenses = Number(r.expenses);
+    return {
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      gstin: r.gstin,
+      state: r.state,
+      country: r.country,
+      totalReceived,
+      totalExpenses,
+      netMargin: totalReceived - totalExpenses,
+      payments: Number(r.payments),
+      lastPaymentDate: r.last_payment,
+      firstSeen: r.first_seen,
+    };
+  });
 }
 
 /** Expenses grouped by category since `from` (YYYY-MM-DD), largest first. */
