@@ -39,6 +39,10 @@ export interface PersistConfirmationParams {
   idempotencyKey?: string;
   draft?: ExtractionResult;
   sessionState?: ChatSessionState;
+  /** Income that pays this invoice (Record payment). */
+  invoiceId?: string;
+  /** Description for an income row (e.g. "Invoice WV/2026-27/001"); expenses use the draft's. */
+  incomeNote?: string;
 }
 
 export type PersistResult =
@@ -431,8 +435,9 @@ export async function confirmAndPersistTransaction(
           exchangeRate,
           exchangeRateDate,
           rateSource,
-          description: typeId === 2 ? draft.expense_description!.trim() : null,
+          description: typeId === 2 ? draft.expense_description!.trim() : (params.incomeNote ?? null),
           categoryId: category?.id ?? null,
+          invoiceId: params.invoiceId ?? null,
           txnDate: draft.txn_date as string,
           source: params.source || "chatbot",
           status: "confirmed",

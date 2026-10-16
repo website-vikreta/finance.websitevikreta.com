@@ -88,7 +88,13 @@ async function duplicateWarning(draft: ExtractionResult, excludeId: string | nul
   return dup ? { ok: false, error: duplicateMessage(dup), duplicate: true } : null;
 }
 
-export async function createManualTransaction(userId: string, raw: unknown, idempotencyKey: string, allowDuplicate = false): Promise<ManageResult> {
+export async function createManualTransaction(
+  userId: string,
+  raw: unknown,
+  idempotencyKey: string,
+  allowDuplicate = false,
+  invoice?: { id: string; note: string },
+): Promise<ManageResult> {
   const parsed = toDraft(raw);
   if (!parsed.ok) return parsed;
   const { draft, rate } = parsed;
@@ -100,6 +106,8 @@ export async function createManualTransaction(userId: string, raw: unknown, idem
     userId,
     source: "manual",
     idempotencyKey: `manual-${idempotencyKey}`,
+    invoiceId: invoice?.id,
+    incomeNote: invoice?.note,
     draft,
     sessionState: {
       status: "READY_FOR_CONFIRMATION",
