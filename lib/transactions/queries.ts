@@ -71,6 +71,7 @@ export interface DeletedRow extends LedgerRow {
   deletedAt: string;
 }
 
+// ponytail: loads every row and the ledger pages in the browser; move to server-side paging once there are thousands.
 export async function listLedger(limit?: number): Promise<LedgerRow[]> {
   return listRows(false, limit);
 }

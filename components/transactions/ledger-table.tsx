@@ -75,7 +75,7 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sort, setSort] = useState<Sort>({ key: "date", dir: "desc" });
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<LedgerRow | null>(null);
