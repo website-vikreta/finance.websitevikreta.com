@@ -23,7 +23,8 @@ async function Invoice({ params }: { params: Promise<{ id: string }> }) {
   if (!UUID.test(id)) notFound();
   await connection(); // overdue is relative to today
   const [invoice, company] = await Promise.all([getInvoice(id), getCompanyProfile()]);
-  if (!invoice || !company) notFound();
+  const effectiveCompany = invoice?.seller ?? company;
+  if (!invoice || !effectiveCompany) notFound();
   const status = displayStatus(invoice, todayInIndia());
   const money = (n: string) => (invoice.currency === "USD" ? `$${Number(n).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : formatINR(Number(n), { decimals: 2 }));
 
@@ -54,7 +55,7 @@ async function Invoice({ params }: { params: Promise<{ id: string }> }) {
         />
       </div>
 
-      <InvoiceDocument invoice={invoice} company={company} />
+      <InvoiceDocument invoice={invoice} company={effectiveCompany} />
 
       {invoice.payments.length > 0 ? (
         <section className="rounded-xl border border-border bg-card p-6 print:hidden">
