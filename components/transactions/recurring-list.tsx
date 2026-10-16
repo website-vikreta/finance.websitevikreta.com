@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Pause, Play, Plus, X } from "lucide-react";
+import Link from "next/link";
+import { Pause, Pencil, Play, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { setRecurringActiveAction, stopRecurringAction } from "@/app/transactions/actions";
 import { formatDate, formatINR } from "@/lib/format";
-import { daysUntil, monthlyShare, remaining } from "@/lib/transactions/recurring-dates";
-import type { RecurringRow } from "@/lib/transactions/recurring";
+import { daysUntil, remaining } from "@/lib/transactions/recurring-dates";
+import type { FinishedBill, RecurringRow } from "@/lib/transactions/recurring";
 import { cn } from "@/lib/utils";
-import { AddBillDialog } from "./add-bill-dialog";
+import { EditBillDialog } from "./edit-bill-dialog";
 import { TransactionFormDialog, type BillToLog } from "./transaction-form-dialog";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -35,20 +36,22 @@ export const toBill = (r: RecurringRow): BillToLog => ({
   amount: remaining(r),
   fullAmount: r.amount,
   currency: r.currency,
+  client: r.clientName,
 });
 
 /** "₹58,000 left" once part of the current bill is paid. */
 export const leftText = (r: RecurringRow) => (r.paid > 0 ? `${money({ amount: remaining(r), currency: r.currency })} left` : null);
 
-export function RecurringList({ rows, today }: { rows: RecurringRow[]; today: string }) {
+export function RecurringList({ rows, finished, today }: { rows: RecurringRow[]; finished: FinishedBill[]; today: string }) {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<RecurringRow | null>(null);
   const [logging, setLogging] = useState<BillToLog | null>(null);
   const [stopping, setStopping] = useState<RecurringRow | null>(null);
   const [pending, startTransition] = useTransition();
 
   const active = rows.filter((r) => r.isActive);
-  const inrPerMonth = active.filter((r) => r.currency === "INR").reduce((s, r) => s + monthlyShare(r), 0);
-  const usdPerMonth = active.filter((r) => r.currency === "USD").reduce((s, r) => s + monthlyShare(r), 0);
+  const inrPerMonth = active.filter((r) => r.currency === "INR").reduce((s, r) => s + r.amount, 0);
+  const usdPerMonth = active.filter((r) => r.currency === "USD").reduce((s, r) => s + r.amount, 0);
 
   const toggle = (r: RecurringRow) =>
     startTransition(async () => {
@@ -82,9 +85,11 @@ export function RecurringList({ rows, today }: { rows: RecurringRow[]; today: st
               return (
                 <li key={r.id} className={cn("flex flex-col gap-3 px-4 py-3.5 @xl:flex-row @xl:items-center", !r.isActive && "opacity-60")}>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-foreground">{r.description}</p>
+                    <Link href={`/transactions/recurring/${r.id}`} className="block max-w-full truncate font-medium text-foreground underline-offset-4 hover:underline">
+                      {r.description}
+                    </Link>
                     <p className="truncate text-caption text-muted-foreground">
-                      {r.category} · {r.frequency === "monthly" ? "Monthly" : "Yearly"}
+                      {r.category} · Monthly{r.clientName ? ` · ${r.clientName}` : ""}{r.endDate ? ` · Until ${formatDate(r.endDate)}` : ""}
                     </p>
                   </div>
                   <div className="flex items-center justify-between gap-4 @xl:justify-end">
@@ -100,6 +105,9 @@ export function RecurringList({ rows, today }: { rows: RecurringRow[]; today: st
                           Mark paid
                         </Button>
                       ) : null}
+                      <Button variant="ghost" size="icon-sm" aria-label={`Edit ${r.description}`} onClick={() => setEditing(r)} disabled={pending} className="text-muted-foreground">
+                        <Pencil aria-hidden />
+                      </Button>
                       <Button variant="ghost" size="icon-sm" aria-label={`${r.isActive ? "Pause" : "Resume"} ${r.description}`} onClick={() => toggle(r)} disabled={pending} className="text-muted-foreground">
                         {r.isActive ? <Pause aria-hidden /> : <Play aria-hidden />}
                       </Button>
@@ -115,7 +123,29 @@ export function RecurringList({ rows, today }: { rows: RecurringRow[]; today: st
         )}
       </div>
 
-      <AddBillDialog open={adding} onOpenChange={setAdding} />
+      {finished.length > 0 ? (
+        <section className="space-y-3">
+          <h2 className="text-title-sm text-muted-foreground">Finished</h2>
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+            {finished.map((f) => (
+              <li key={f.id} className="flex items-center gap-3 px-4 py-3 text-muted-foreground">
+                <div className="min-w-0 flex-1">
+                  <Link href={`/transactions/recurring/${f.id}`} className="block max-w-full truncate font-medium underline-offset-4 hover:underline">
+                    {f.description}
+                  </Link>
+                  <p className="truncate text-caption">
+                    {[f.category, f.clientName, `Ended ${formatDate(f.endDate)}`].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+                <p className="shrink-0 font-mono tabular-nums">{money(f)}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <TransactionFormDialog open={adding} onOpenChange={setAdding} newBill />
+      <EditBillDialog bill={editing} onOpenChange={(o) => !o && setEditing(null)} />
       <TransactionFormDialog open={logging !== null} onOpenChange={(o) => !o && setLogging(null)} bill={logging} />
       <StopBillDialog row={stopping} onOpenChange={(o) => !o && setStopping(null)} />
     </div>

@@ -11,7 +11,7 @@ import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { todayInIndia } from "@/lib/transactions/period";
 import { listDeleted, listLedger } from "@/lib/transactions/queries";
-import { listRecurring } from "@/lib/transactions/recurring";
+import { listFinished, listRecurring } from "@/lib/transactions/recurring";
 
 export const metadata = { title: "Transactions" };
 
@@ -30,7 +30,8 @@ async function Ledger() {
 
 async function Recurring() {
   await connection(); // "due in N days" is relative to today
-  return <RecurringList rows={await listRecurring()} today={todayInIndia()} />;
+  const [rows, finished] = await Promise.all([listRecurring(), listFinished()]);
+  return <RecurringList rows={rows} finished={finished} today={todayInIndia()} />;
 }
 
 async function Body({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
