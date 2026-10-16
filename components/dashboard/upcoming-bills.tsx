@@ -9,10 +9,10 @@ import { daysUntil } from "@/lib/transactions/recurring-dates";
 import type { RecurringRow } from "@/lib/transactions/recurring";
 import { cn } from "@/lib/utils";
 
-const WINDOW_DAYS = 30;
+const WINDOW_DAYS = 35;
 const MAX_ROWS = 5;
 
-/** Active bills due within 30 days (overdue first); "Mark paid" opens a prefilled confirm form. */
+/** Active bills due within WINDOW_DAYS (overdue first); "Mark paid" opens a prefilled confirm form. */
 export function UpcomingBills({ rows, today }: { rows: RecurringRow[]; today: string }) {
   const [logging, setLogging] = useState<BillToLog | null>(null);
   const due = rows.filter((r) => r.isActive && daysUntil(r.nextDue, today) <= WINDOW_DAYS);
