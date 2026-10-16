@@ -42,10 +42,10 @@ assert.deepEqual(s3, [
   { due: "2026-02-28", status: "part_paid" },
   { due: "2026-03-31", status: "upcoming" },
 ]);
-// Ongoing, overdue, shows two months ahead
+// Ongoing, overdue: stops at the open month
 assert.deepEqual(
   billSchedule({ firstDue: "2026-09-10", anchorDay: 10, nextDue: "2026-10-10", endDate: null, paid: 0 }, "2026-10-16").map((m) => m.status),
-  ["paid", "overdue", "upcoming", "upcoming"],
+  ["paid", "overdue"],
 );
 // Completed bill: next_due is past the end, every month paid
 assert.deepEqual(

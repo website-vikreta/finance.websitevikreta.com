@@ -37,11 +37,11 @@ export type MonthStatus = "paid" | "part_paid" | "overdue" | "due" | "upcoming";
 
 /**
  * Every month of a bill from its first due date: months before next_due are paid, next_due is
- * open (part paid / overdue / due), later ones upcoming. Runs to end_date, or two months past
- * next_due for an ongoing bill.
+ * open (part paid / overdue / due), later ones upcoming. Runs to end_date; an ongoing bill
+ * stops at next_due, since it has no planned months beyond it.
  */
 export function billSchedule(bill: { firstDue: string; anchorDay: number; nextDue: string; endDate: string | null; paid: number }, today: string): { due: string; status: MonthStatus }[] {
-  let last = bill.endDate ?? advanceDue(advanceDue(bill.nextDue, bill.anchorDay), bill.anchorDay);
+  let last = bill.endDate ?? bill.nextDue;
   if (last < bill.nextDue) last = bill.nextDue; // completed bills keep next_due one past the end
   const out: { due: string; status: MonthStatus }[] = [];
   for (let due = bill.firstDue; due <= last && out.length < 240; due = advanceDue(due, bill.anchorDay)) {
