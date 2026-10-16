@@ -93,6 +93,8 @@ export interface BillDetails {
   amount: number;
   currency: "INR" | "USD";
   clientName: string | null;
+  clientId: string | null;
+  nextDue: string;
   /** Paid so far towards the open month. */
   paid: number;
   status: "active" | "paused" | "finished" | "stopped";
@@ -115,6 +117,7 @@ export async function getBillDetails(id: string, today: string): Promise<BillDet
       amount: recurringExpenses.originalAmount,
       currency: recurringExpenses.originalCurrency,
       clientName: clients.clientName,
+      clientId: clients.clientId,
       isActive: recurringExpenses.isActive,
       deletedAt: recurringExpenses.deletedAt,
       anchorDay: recurringExpenses.anchorDay,
@@ -152,6 +155,8 @@ export async function getBillDetails(id: string, today: string): Promise<BillDet
     amount: Number(bill.amount),
     currency: bill.currency as "INR" | "USD",
     clientName: bill.clientName,
+    clientId: bill.clientId,
+    nextDue: bill.nextDue,
     paid: Number(bill.paid),
     status: finished ? "finished" : bill.deletedAt ? "stopped" : bill.isActive ? "active" : "paused",
     addedOn: bill.addedOn,

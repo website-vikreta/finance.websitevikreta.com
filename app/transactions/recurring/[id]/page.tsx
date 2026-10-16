@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { StatTile } from "@/components/layout/stat-tile";
+import { BillActions } from "@/components/transactions/bill-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate, formatINR } from "@/lib/format";
 import { todayInIndia } from "@/lib/transactions/period";
@@ -41,13 +42,42 @@ async function Bill({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <>
-      <div className="min-w-0 space-y-2">
-        <Link href="/transactions?view=recurring" className="inline-flex items-center gap-1.5 text-caption text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-3.5" aria-hidden />
-          Recurring bills
-        </Link>
-        <h1 className="text-title-lg break-words md:text-display-sm">{bill.description}</h1>
-        <p className="text-caption text-muted-foreground">{[bill.category, bill.clientName, BILL_STATUS[bill.status]].filter(Boolean).join(" · ")}</p>
+      <div className="flex flex-col gap-4 @xl:flex-row @xl:items-end @xl:justify-between">
+        <div className="min-w-0 space-y-2">
+          <Link href="/transactions?view=recurring" className="inline-flex items-center gap-1.5 text-caption text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="size-3.5" aria-hidden />
+            Recurring bills
+          </Link>
+          <h1 className="text-title-lg break-words md:text-display-sm">{bill.description}</h1>
+          <p className="text-caption text-muted-foreground">
+            {bill.category}
+            {bill.clientName && bill.clientId ? (
+              <>
+                {" · "}
+                <Link href={`/clients/${bill.clientId}`} className="text-foreground underline-offset-4 hover:underline">
+                  {bill.clientName}
+                </Link>
+              </>
+            ) : null}
+            {` · ${BILL_STATUS[bill.status]}`}
+          </p>
+        </div>
+        {bill.status === "active" || bill.status === "paused" ? (
+          <BillActions
+            bill={{
+              id: bill.id,
+              description: bill.description,
+              category: bill.category,
+              amount: bill.amount,
+              currency: bill.currency,
+              nextDue: bill.nextDue,
+              paid: bill.paid,
+              isActive: bill.status === "active",
+              endDate: bill.endDate,
+              clientName: bill.clientName,
+            }}
+          />
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-6 @4xl:grid-cols-4">
