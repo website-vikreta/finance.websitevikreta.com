@@ -240,4 +240,18 @@
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+  /* Only the document prints, however printing starts (Download PDF or Cmd+P):
+     no toasts, dialogs, menus, tooltips or the Next.js dev badge. */
+  [data-sonner-toaster],
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-content"],
+  [data-slot="select-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="tooltip-content"],
+  nextjs-portal {
+    display: none !important;
+  }
 }
