@@ -13,6 +13,7 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession, SESSION_COOKIE, type SessionPayload } from "@/lib/auth";
+import { isActiveUser } from "@/lib/credentials";
 
 export type AuthResult =
   | { ok: true; session: SessionPayload }
@@ -39,7 +40,8 @@ export async function requireAuth(req: NextRequest): Promise<AuthResult> {
 
   const session = await verifySession(token);
 
-  if (!session) {
+  // A removed member's JWT stays valid until it expires; the proxy can't check the DB, so check here.
+  if (!session || !(await isActiveUser(session.userId))) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -72,7 +74,8 @@ export async function requireAuthAction(): Promise<AuthResult> {
 
   const session = await verifySession(token);
 
-  if (!session) {
+  // A removed member's JWT stays valid until it expires; the proxy can't check the DB, so check here.
+  if (!session || !(await isActiveUser(session.userId))) {
     return {
       ok: false,
       response: NextResponse.json(
