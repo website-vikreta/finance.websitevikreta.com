@@ -112,6 +112,7 @@ Each type class sets size, line-height, tracking and weight together; don't stac
 - Radius: cards and panels `rounded-xl` (12px); buttons and inputs `rounded-lg` (8px); small chips `rounded-md` (6px); badges, avatars and dots `rounded-full`.
 - Card padding `p-6` (stat tiles `p-5`); sections stacked with `space-y-6`; grids `gap-4` (tiles) or `gap-6` (panels).
 - Shell: top bar 64px white with bottom hairline; sidebar white with right hairline; content `max-w-7xl`, padded `p-4 md:p-8`.
+- Card spacing: 24px between cards everywhere, side by side and stacked (`gap-6` in grids, `space-y-6` in stacks), at every breakpoint. Never wrap cards in `display: contents`; `space-y` only spaces direct children.
 
 ## Components
 

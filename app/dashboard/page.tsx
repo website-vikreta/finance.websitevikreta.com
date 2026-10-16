@@ -44,7 +44,7 @@ async function DashboardData() {
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 @lg:gap-4 @4xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-6 @4xl:grid-cols-4">
         {kpis.map((kpi) => <KPICard key={kpi.id} card={kpi} />)}
       </div>
       <div className="grid grid-cols-1 items-stretch gap-6 @4xl:grid-cols-12">
@@ -70,7 +70,7 @@ async function DashboardData() {
 function DashboardSkeleton() {
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 @lg:gap-4 @4xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-6 @4xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
       </div>
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-12">

@@ -17,7 +17,7 @@ async function ClientsData() {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 @xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 @xl:grid-cols-3">
         <StatTile label="Clients" value={String(clients.length)} />
         <StatTile label="Total received" value={formatINR(totalReceived)} />
         <StatTile label="Payments" value={String(payments)} />
@@ -47,10 +47,10 @@ export default function ClientsPage() {
       <Suspense
         fallback={
           <>
-            <div className="grid grid-cols-1 gap-4 @xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 @xl:grid-cols-3">
               {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
             </div>
-            <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-2 @5xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-2 @5xl:grid-cols-3">
               {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-60 rounded-xl" />)}
             </div>
           </>

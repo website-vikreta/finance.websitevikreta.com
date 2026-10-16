@@ -151,7 +151,7 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
   const totalOut = filtered.filter((r) => r.type === "expense").reduce((s, r) => s + r.amountInr, 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="space-y-4 rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-center @3xl:justify-between">
           <div role="tablist" aria-label="Filter by type" className={segmentedTrack}>

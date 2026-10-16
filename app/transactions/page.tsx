@@ -28,7 +28,7 @@ export default function TransactionsPage() {
       />
       <Suspense
         fallback={
-          <div className="space-y-4">
+          <div className="space-y-6">
             <Skeleton className="h-16 rounded-xl" />
             <Skeleton className="h-96 rounded-xl" />
           </div>

@@ -75,8 +75,8 @@ async function ReportData({ period }: { period: Period }) {
         months={months}
         rows={ledger.filter((r) => r.date >= from)}
       />
-      <div className="contents print:hidden">
-      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-3">
+      <div className="space-y-6 print:hidden">
+      <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-3">
         <StatTile label="Income" value={formatINR(totalIn)} note={`${income.reduce((s, i) => s + i.count, 0)} payments`} />
         <StatTile label="Expenses" value={formatINR(totalOut)} note={`${expenses.reduce((s, i) => s + i.count, 0)} entries`} />
         <StatTile label="Net profit" value={formatINR(net)} note={margin} />
@@ -154,7 +154,7 @@ async function Report({ searchParams }: { searchParams: Promise<Record<string, s
 function ReportSkeleton() {
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-3">
         {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
       </div>
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
