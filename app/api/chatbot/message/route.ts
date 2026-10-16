@@ -43,7 +43,8 @@ import { detectContradiction, extractExplicitExchangeRate } from "@/lib/chatbot/
 import { confirmAndPersistTransaction } from "@/lib/transactions/persist";
 import { duplicateMessage, findDuplicate } from "@/lib/transactions/duplicates";
 import { answerQuestion, looksLikeQuestion, parseQuestion } from "@/lib/chatbot/ask";
-import { HELP_TEXT, isCancel, isCasualGreeting, isConfirm, isHelpRequest } from "@/lib/chatbot/intent";
+import { HELP_TEXT, isCancel, isCasualGreeting, isConfirm, isHelpRequest, startIntent } from "@/lib/chatbot/intent";
+import { EMPTY_DRAFT } from "@/lib/chatbot/merge";
 import crypto from "crypto";
 
 // ---------------------------------------------------------------------------
@@ -159,6 +160,16 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
 
   const message = (bodyObj["message"] as string).trim();
   const today = todayInIndia();
+
+  // -- "Add expense" / "Add income": always a fresh entry, never merged into an old draft --
+  const startType = startIntent(message);
+  if (startType) {
+    clearAll(userId);
+    const draft = { ...EMPTY_DRAFT, type: startType };
+    setDraft(userId, draft);
+    const validation = validateExtraction(draft);
+    return NextResponse.json({ ok: true, status: "COLLECTING", draft, validation, question: validation.question }, { status: 200 });
+  }
 
   // -- Load current state --------------------------------------------------
   const session = getSession(userId);
