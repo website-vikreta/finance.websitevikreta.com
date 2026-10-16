@@ -18,6 +18,7 @@
 
 import { NextRequest } from "next/server";
 import { createSession, SESSION_COOKIE } from "../../auth";
+import { removeTestRows } from "./cleanup";
 import { setDraft, getDraft, setSession, getSession, clearAll } from "../store";
 import { GET as getMessageHandler, POST as postMessageHandler } from "../../../app/api/chatbot/message/route";
 import { POST as confirmHandler } from "../../../app/api/chatbot/confirm/route";
@@ -378,6 +379,7 @@ async function runAllTests() {
     assert("No premature validation error triggered", greetingJson.ok === true);
   }
 
+  console.log(`\nCleaned up ${await removeTestRows(userId)} test transaction(s).`);
   console.log(`\n────────────────────────────────────────────────────────────`);
   console.log(`E2E Integration Test Suite: ${passed} passed, ${failed} failed`);
   console.log(`────────────────────────────────────────────────────────────\n`);

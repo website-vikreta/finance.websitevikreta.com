@@ -20,6 +20,8 @@ export type TxnType = "income" | "expense";
 export interface LedgerRow {
   id: string;
   date: string;
+  /** When it was entered, HH:MM in India time (txn date itself has no time). */
+  time: string;
   type: TxnType;
   /** Client name for income, expense description for expenses. */
   title: string;
@@ -87,6 +89,7 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
   const data = await rows<{
     id: string;
     date: string;
+    time: string;
     type_id: number;
     title: string;
     detail: string | null;
@@ -99,6 +102,7 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
   }>(sql`
     SELECT t.id,
            to_char(t.txn_date, 'YYYY-MM-DD') AS date,
+           to_char(t.created_at AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS time,
            t.type_id,
            CASE WHEN t.type_id = ${INCOME}
                 THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
@@ -116,6 +120,7 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
   return data.map((r) => ({
     id: r.id,
     date: r.date,
+    time: r.time,
     type: r.type_id === INCOME ? "income" : "expense",
     title: r.title,
     detail: r.detail,
@@ -207,4 +212,46 @@ export async function incomeBreakdown(from: string): Promise<Breakdown[]> {
     ORDER BY amount DESC
   `);
   return data.map((r) => ({ name: r.name, amount: Number(r.amount), count: Number(r.count) }));
+}
+
+export interface RangeSummary {
+  income: number;
+  expense: number;
+  incomeCount: number;
+  expenseCount: number;
+  /** Largest groups (client for income, description for expenses), biggest first. */
+  top: { type: TxnType; name: string; amount: number }[];
+}
+
+/**
+ * Totals between `from` and `to` (inclusive, YYYY-MM-DD) for the Finance Chat Bot.
+ * `search` narrows to rows whose client name or description contains it (case-insensitive).
+ */
+export async function rangeSummary(from: string, to: string, search: string | null): Promise<RangeSummary> {
+  const match = search
+    ? sql`AND (coalesce(c.client_name, t.client_name_snapshot, '') ILIKE ${`%${search}%`} OR coalesce(t.description, '') ILIKE ${`%${search}%`})`
+    : sql``;
+  const data = await rows<{ type_id: number; name: string; amount: string; count: string }>(sql`
+    SELECT type_id, min(name) AS name, sum(amount_inr) AS amount, count(*) AS count
+    FROM (
+      SELECT t.type_id, t.amount_inr,
+             CASE WHEN t.type_id = ${INCOME}
+                  THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
+                  ELSE coalesce(t.description, 'Expense') END AS name
+      FROM transactions t
+      LEFT JOIN clients c ON c.client_id = t.client_id
+      WHERE t.deleted_at IS NULL AND t.txn_date BETWEEN ${from}::date AND ${to}::date ${match}
+    ) r
+    GROUP BY type_id, lower(trim(name))
+    ORDER BY amount DESC
+  `);
+
+  const summary: RangeSummary = { income: 0, expense: 0, incomeCount: 0, expenseCount: 0, top: [] };
+  for (const r of data) {
+    const type: TxnType = r.type_id === INCOME ? "income" : "expense";
+    summary[type] += Number(r.amount);
+    summary[type === "income" ? "incomeCount" : "expenseCount"] += Number(r.count);
+    summary.top.push({ type, name: r.name ?? "Expense", amount: Number(r.amount) });
+  }
+  return summary;
 }

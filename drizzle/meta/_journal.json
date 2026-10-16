@@ -29,6 +29,13 @@
       "when": 1792058176936,
       "tag": "0003_chat_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792087933940,
+      "tag": "0004_members_password",
+      "breakpoints": true
     }
   ]
 }

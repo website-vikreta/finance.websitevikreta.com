@@ -13,6 +13,8 @@ import { PERIODS, parsePeriod, periodStart, type Period } from "@/lib/transactio
 import { expenseBreakdown, incomeBreakdown, monthlyTotals, type Breakdown } from "@/lib/transactions/queries";
 import { cn } from "@/lib/utils";
 
+export const metadata = { title: "Reports" };
+
 const TOP_N = 8;
 
 function BreakdownCard({ title, items, empty, barClass }: { title: string; items: Breakdown[]; empty: string; barClass: string }) {

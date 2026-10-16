@@ -9,6 +9,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { percentChange } from "@/lib/format";
 import { clientSummaries, expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals } from "@/lib/transactions/queries";
 
+export const metadata = { title: "Dashboard" };
+
 const MONTHS = 12; // the trend chart's longest range
 
 function change(current: number, previous: number, higherIsBetter: boolean): Pick<KPICardData, "note" | "tone"> {

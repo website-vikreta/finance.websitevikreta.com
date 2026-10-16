@@ -1,6 +1,7 @@
 "use client";
 
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, type TooltipContentProps, type TooltipValueType } from "recharts";
+import { useState } from "react";
+import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { formatINR, formatShare } from "@/lib/format";
 import type { Breakdown } from "@/lib/transactions/queries";
 
@@ -15,27 +16,15 @@ interface Slice {
   color: string;
 }
 
+/** Legend rows are capped so the card keeps the same height as the chart beside it, however many categories exist. */
+const MAX_ROWS = 4;
+
 function toSlices(items: Breakdown[]): Slice[] {
-  const top = items.slice(0, SLOTS.length).map((item, i) => ({ name: item.name, amount: item.amount, color: SLOTS[i] }));
-  const rest = items.slice(SLOTS.length);
+  const keep = items.length <= MAX_ROWS ? items.length : MAX_ROWS - 1;
+  const top = items.slice(0, keep).map((item, i) => ({ name: item.name, amount: item.amount, color: SLOTS[i] }));
+  const rest = items.slice(keep);
   if (rest.length === 0) return top;
   return [...top, { name: `Other (${rest.length})`, amount: rest.reduce((s, i) => s + i.amount, 0), color: OTHER }];
-}
-
-function SliceTooltip({ active, payload }: TooltipContentProps<TooltipValueType, string | number>) {
-  const slice = active ? (payload?.[0]?.payload as (Slice & { total: number }) | undefined) : undefined;
-  if (!slice) return null;
-  return (
-    <div className="rounded-lg border border-border bg-popover px-3 py-2 text-caption shadow-md">
-      <p className="flex items-center gap-2 font-medium text-foreground">
-        <i className="size-2 rounded-full" style={{ background: slice.color }} aria-hidden />
-        {slice.name}
-      </p>
-      <p className="mt-0.5 font-mono tabular-nums text-muted-foreground">
-        {formatINR(slice.amount)} · {formatShare(slice.amount, slice.total)}
-      </p>
-    </div>
-  );
 }
 
 interface BreakdownDonutProps {
@@ -44,12 +33,15 @@ interface BreakdownDonutProps {
   empty: string;
 }
 
-/** Part-to-whole at a glance: top 5 + "Other" as a donut, with a value legend that doubles as the table view. */
+/** Part-to-whole at a glance: top 3 + "Other" as a donut, with a value legend that doubles as the table view. */
 export function BreakdownDonut({ title, items, empty }: BreakdownDonutProps) {
   const slices = toSlices(items);
   const total = slices.reduce((s, x) => s + x.amount, 0);
   const data = slices.map((s) => ({ ...s, total }));
   const asDonut = slices.length >= MIN_SLICES;
+  // Hovering a slice swaps the centre label instead of floating a tooltip, so nothing can overlap or clip.
+  const [hovered, setHovered] = useState<number | null>(null);
+  const focus = hovered === null ? null : slices[hovered];
 
   return (
     <section className="flex h-full flex-col rounded-xl border border-border bg-card p-6">
@@ -63,18 +55,17 @@ export function BreakdownDonut({ title, items, empty }: BreakdownDonutProps) {
             <div className="relative mx-auto mt-4 size-44" role="img" aria-label={`${title}: ${formatINR(total)} total`}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={data} dataKey="amount" nameKey="name" innerRadius="64%" outerRadius="100%" stroke="var(--card)" strokeWidth={2} startAngle={90} endAngle={-270} isAnimationActive={false}>
-                    {data.map((s) => (
-                      <Cell key={s.name} fill={s.color} />
+                  <Pie data={data} dataKey="amount" nameKey="name" innerRadius="64%" outerRadius="100%" stroke="var(--card)" strokeWidth={2} startAngle={90} endAngle={-270} isAnimationActive={false} onMouseEnter={(_, i) => setHovered(i)} onMouseLeave={() => setHovered(null)}>
+                    {data.map((s, i) => (
+                      <Cell key={s.name} fill={s.color} opacity={hovered === null || hovered === i ? 1 : 0.35} className="transition-opacity" />
                     ))}
                   </Pie>
-                  <Tooltip content={SliceTooltip} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
-                <div>
-                  <p className="font-mono text-title-sm tabular-nums text-foreground">{formatINR(total, { compact: true })}</p>
-                  <p className="text-micro text-muted-foreground">total</p>
+                <div className="max-w-24">
+                  <p className="font-mono text-title-sm tabular-nums text-foreground">{formatINR(focus ? focus.amount : total, { compact: true })}</p>
+                  <p className="truncate text-micro text-muted-foreground">{focus ? focus.name : "total"}</p>
                 </div>
               </div>
             </div>
@@ -82,7 +73,7 @@ export function BreakdownDonut({ title, items, empty }: BreakdownDonutProps) {
 
           <ul className={asDonut ? "mt-5 space-y-2" : "mt-4 space-y-3"}>
             {slices.map((s) => (
-              <li key={s.name} className="text-body-sm">
+              <li key={s.name} className="text-body-sm" onMouseEnter={() => asDonut && setHovered(slices.indexOf(s))} onMouseLeave={() => setHovered(null)}>
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex min-w-0 items-center gap-2 text-foreground">
                     <i className="size-2.5 shrink-0 rounded-sm" style={{ background: asDonut ? s.color : "var(--income)" }} aria-hidden />

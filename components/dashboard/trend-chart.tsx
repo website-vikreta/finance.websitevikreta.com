@@ -34,7 +34,7 @@ const axisTick = { fill: "var(--muted-foreground)", fontSize: 12 };
 function TrendTooltip({ active, payload, label }: TooltipContentProps<TooltipValueType, string | number>) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-border bg-popover px-3 py-2 text-caption shadow-md">
+    <div className="w-max rounded-lg border border-border bg-popover px-3 py-2 text-caption shadow-md">
       <p className="mb-1 font-medium text-foreground">{formatMonthShort(String(label))} {String(label).slice(0, 4)}</p>
       {SERIES.map((s) => {
         const value = payload.find((p) => p.dataKey === s.key)?.value ?? 0;
@@ -73,13 +73,14 @@ export function TrendChart({ data }: { data: MonthTotals[] }) {
       />
       <Tooltip
         content={TrendTooltip}
+        wrapperStyle={{ zIndex: 20 }}
         cursor={type === "bar" ? { fill: "var(--muted)" } : { stroke: "var(--hairline-strong)" }}
       />
     </>
   );
 
   return (
-    <section className="rounded-xl border border-border bg-card p-6" aria-labelledby="trend-title">
+    <section className="h-full rounded-xl border border-border bg-card p-6" aria-labelledby="trend-title">
       <div className="flex flex-col gap-3 @2xl:flex-row @2xl:items-start @2xl:justify-between">
         <div>
           <h2 id="trend-title" className="text-title-md">Income vs expenses</h2>

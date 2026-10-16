@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { Download, LogOut } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
@@ -8,6 +8,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { db } from "@/lib/db";
 import { appUsers } from "@/lib/db/schema";
 import { requireAuthAction } from "@/lib/server-auth";
+import { cn } from "@/lib/utils";
+import { AddMemberForm } from "./add-member-form";
+import { RemoveMemberButton } from "./remove-member-button";
+
+export const metadata = { title: "Settings" };
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -49,6 +54,37 @@ async function Account() {
   );
 }
 
+async function Members() {
+  const auth = await requireAuthAction();
+  const me = auth.ok ? auth.session.userId : null;
+  const members = await db
+    .select({ id: appUsers.id, email: appUsers.email })
+    .from(appUsers)
+    .where(and(eq(appUsers.isActive, true), isNotNull(appUsers.email)))
+    .orderBy(asc(appUsers.createdAt));
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-6">
+      <h2 className="text-title-md">Members</h2>
+      <ul className="mt-3 divide-y divide-border">
+        {members.map((m) => (
+          <li key={m.id} className="flex items-center justify-between gap-3 py-3 text-body-sm text-foreground">
+            <span className="truncate">{m.email}</span>
+            {m.id === "admin" ? (
+              <span className="text-caption text-muted-foreground">Primary</span>
+            ) : m.id === me ? (
+              <span className="text-caption text-muted-foreground">You</span>
+            ) : (
+              <RemoveMemberButton id={m.id} email={m.email ?? ""} />
+            )}
+          </li>
+        ))}
+      </ul>
+      <AddMemberForm />
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   return (
     <AppShell>
@@ -67,6 +103,10 @@ export default function SettingsPage() {
         </Card>
       </div>
 
+      <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+        <Members />
+      </Suspense>
+
       <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 @xl:flex-row @xl:items-center @xl:justify-between">
         <h2 className="text-title-md">Data</h2>
         <div className="flex flex-wrap gap-3">
@@ -74,7 +114,7 @@ export default function SettingsPage() {
             <Download aria-hidden />
             Export all (CSV)
           </a>
-          <a href="/api/auth/logout" className={buttonVariants({ variant: "outline" })}>
+          <a href="/api/auth/logout" className={cn(buttonVariants({ variant: "outline" }), "border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive")}>
             <LogOut aria-hidden />
             Sign out
           </a>

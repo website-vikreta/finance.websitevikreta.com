@@ -12,7 +12,6 @@ interface ChatSessionContextValue {
   status: ChatStatus;
   isLoading: boolean;
   isPendingAction: boolean;
-  welcomeTimestamp: string | null;
   scrollTop: number;
   loadInitialState: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
@@ -23,13 +22,6 @@ interface ChatSessionContextValue {
 
 const ChatSessionContext = createContext<ChatSessionContextValue | null>(null);
 
-function formatTime(): string {
-  const now = new Date();
-  const hours = now.getHours();
-  const minutes = now.getMinutes().toString().padStart(2, "0");
-  const ampm = hours >= 12 ? "pm" : "am";
-  return `${(hours % 12 || 12).toString().padStart(2, "0")}:${minutes} ${ampm}`;
-}
 
 export function ChatSessionProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -37,7 +29,6 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
   const [, setCurrentDraft] = useState<ExtractionResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPendingAction, setIsPendingAction] = useState(false);
-  const [welcomeTimestamp, setWelcomeTimestamp] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const hasLoadedServerStateRef = useRef(false);
   const initialStateRequestRef = useRef<Promise<void> | null>(null);
@@ -58,7 +49,6 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadInitialState = useCallback(async () => {
-    setWelcomeTimestamp((current) => current ?? formatTime());
     if (hasLoadedServerStateRef.current) return;
     if (initialStateRequestRef.current) return initialStateRequestRef.current;
 
@@ -83,19 +73,19 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
 
     isRequestInFlightRef.current = true;
     stateRevisionRef.current += 1;
-    appendMessage({ id: `user-${Date.now()}`, role: "user", content: query, timestamp: formatTime() });
+    appendMessage({ id: `user-${Date.now()}`, role: "user", content: query });
     setIsLoading(true);
 
     try {
       const response = await sendChatMessage(query);
       if (!response.ok || !response.data) {
-        appendMessage({ id: `assistant-err-${Date.now()}`, role: "assistant", content: response.error || "Failed to process message.", timestamp: formatTime(), isError: true, errorMessage: query });
+        appendMessage({ id: `assistant-err-${Date.now()}`, role: "assistant", content: response.error || "Failed to process message.", isError: true, errorMessage: query });
         return;
       }
 
       const data = response.data;
       if (!data.ok) {
-        appendMessage({ id: `assistant-err-${Date.now()}`, role: "assistant", content: data.error, timestamp: formatTime(), isError: true, errorMessage: query });
+        appendMessage({ id: `assistant-err-${Date.now()}`, role: "assistant", content: data.error, isError: true, errorMessage: query });
         return;
       }
 
@@ -107,20 +97,20 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
       else if (data.status !== "READY_FOR_CONFIRMATION" || data.confirmation) resolvePendingCards("replaced");
 
       if (data.status === "CONFIRMED" && data.transaction) {
-        appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: SAVED_MESSAGE, timestamp: formatTime(), status: "CONFIRMED", confirmedTransaction: data.transaction });
+        appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: SAVED_MESSAGE, status: "CONFIRMED", confirmedTransaction: data.transaction });
         router.refresh();
       } else if (data.status === "CANCELLED") {
-        appendMessage({ id: `assistant-cancelled-${Date.now()}`, role: "assistant", content: data.message || "Transaction discarded. Start a new message to record another.", timestamp: formatTime(), status: "CANCELLED" });
+        appendMessage({ id: `assistant-cancelled-${Date.now()}`, role: "assistant", content: data.message || "Transaction discarded. Start a new message to record another.", status: "CANCELLED" });
       } else if (data.status === "READY_FOR_CONFIRMATION" && data.confirmation) {
-        const confirmMsg = data.question || "All required transaction details have been provided. Please review the summary below and confirm:";
-        appendMessage({ id: `assistant-ready-${Date.now()}`, role: "assistant", content: confirmMsg, timestamp: formatTime(), status: "READY_FOR_CONFIRMATION", confirmation: data.confirmation });
+        const confirmMsg = data.question || "Check the details and confirm.";
+        appendMessage({ id: `assistant-ready-${Date.now()}`, role: "assistant", content: confirmMsg, status: "READY_FOR_CONFIRMATION", confirmation: data.confirmation });
       } else if (data.status === "READY_FOR_CONFIRMATION" && data.question) {
         // READY_FOR_CONFIRMATION with question but no confirmation card (e.g. INR rate clarification)
-        appendMessage({ id: `assistant-ask-${Date.now()}`, role: "assistant", content: data.question, timestamp: formatTime(), status: "READY_FOR_CONFIRMATION", draft: data.draft });
+        appendMessage({ id: `assistant-ask-${Date.now()}`, role: "assistant", content: data.question, status: "READY_FOR_CONFIRMATION", draft: data.draft });
       } else if (data.status === "AWAITING_EXCHANGE_RATE") {
-        appendMessage({ id: `assistant-rate-${Date.now()}`, role: "assistant", content: data.question || "What USD → INR rate should I use? Send just the number, e.g. 88.50.", timestamp: formatTime(), status: "AWAITING_EXCHANGE_RATE", isRatePrompt: true });
+        appendMessage({ id: `assistant-rate-${Date.now()}`, role: "assistant", content: data.question || "What USD → INR rate should I use? Send just the number, e.g. 88.50.", status: "AWAITING_EXCHANGE_RATE", isRatePrompt: true });
       } else {
-        appendMessage({ id: `assistant-ask-${Date.now()}`, role: "assistant", content: data.validation?.question || data.question || "Please provide the missing transaction details.", timestamp: formatTime(), status: "COLLECTING", draft: data.draft, validation: data.validation });
+        appendMessage({ id: `assistant-ask-${Date.now()}`, role: "assistant", content: data.validation?.question || data.question || "Please provide the missing transaction details.", status: "COLLECTING", draft: data.draft, validation: data.validation });
       }
     } finally {
       setIsLoading(false);
@@ -135,32 +125,32 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
     stateRevisionRef.current += 1;
     setIsPendingAction(true);
     const actionText = action === "CONFIRM" ? "Confirm transaction" : action === "CANCEL" ? "Cancel transaction" : "Edit details";
-    appendMessage({ id: `user-action-${Date.now()}`, role: "user", content: actionText, timestamp: formatTime() });
+    appendMessage({ id: `user-action-${Date.now()}`, role: "user", content: actionText });
 
     try {
       const response = await sendConfirmAction(action);
       if (!response.ok || !response.data) {
-        appendMessage({ id: `assistant-action-err-${Date.now()}`, role: "assistant", content: response.error || `Failed to process ${action} action.`, timestamp: formatTime(), isError: true });
+        appendMessage({ id: `assistant-action-err-${Date.now()}`, role: "assistant", content: response.error || `Failed to process ${action} action.`, isError: true });
         return;
       }
 
       const data = response.data;
       if (!data.ok) {
-        appendMessage({ id: `assistant-action-err-${Date.now()}`, role: "assistant", content: data.error, timestamp: formatTime(), isError: true });
+        appendMessage({ id: `assistant-action-err-${Date.now()}`, role: "assistant", content: data.error, isError: true });
         return;
       }
 
       setStatus(data.status);
       resolvePendingCards(action === "CONFIRM" ? "confirmed" : action === "CANCEL" ? "cancelled" : "replaced");
       if (action === "CONFIRM" && data.transaction) {
-        appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: SAVED_MESSAGE, timestamp: formatTime(), status: "CONFIRMED", confirmedTransaction: data.transaction });
+        appendMessage({ id: `assistant-confirmed-${Date.now()}`, role: "assistant", content: SAVED_MESSAGE, status: "CONFIRMED", confirmedTransaction: data.transaction });
         router.refresh();
       } else if (action === "CANCEL") {
         setCurrentDraft(null);
-        appendMessage({ id: `assistant-cancelled-${Date.now()}`, role: "assistant", content: data.message || "Transaction discarded. Start a new message to record another.", timestamp: formatTime(), status: "CANCELLED" });
+        appendMessage({ id: `assistant-cancelled-${Date.now()}`, role: "assistant", content: data.message || "Transaction discarded. Start a new message to record another.", status: "CANCELLED" });
       } else if (action === "EDIT") {
         if (data.draft) setCurrentDraft(data.draft);
-        appendMessage({ id: `assistant-edit-${Date.now()}`, role: "assistant", content: data.message || "Ready for your correction. Send your updated transaction details.", timestamp: formatTime(), status: "COLLECTING", draft: data.draft });
+        appendMessage({ id: `assistant-edit-${Date.now()}`, role: "assistant", content: data.message || "Ready for your correction. Send your updated transaction details.", status: "COLLECTING", draft: data.draft });
       }
     } finally {
       setIsPendingAction(false);
@@ -181,7 +171,6 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
       setMessages([]);
       setStatus("COLLECTING");
       setCurrentDraft(null);
-      setWelcomeTimestamp(formatTime());
       setScrollTop(0);
       hasLoadedServerStateRef.current = true;
     } finally {
@@ -190,7 +179,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  return <ChatSessionContext.Provider value={{ messages, status, isLoading, isPendingAction, welcomeTimestamp, scrollTop, loadInitialState, sendMessage, confirmAction, resetConversation, setScrollTop }}>{children}</ChatSessionContext.Provider>;
+  return <ChatSessionContext.Provider value={{ messages, status, isLoading, isPendingAction, scrollTop, loadInitialState, sendMessage, confirmAction, resetConversation, setScrollTop }}>{children}</ChatSessionContext.Provider>;
 }
 
 export function useChatSession(): ChatSessionContextValue {

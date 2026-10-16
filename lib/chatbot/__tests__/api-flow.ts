@@ -12,6 +12,7 @@
 
 import { NextRequest } from "next/server";
 import { createSession, SESSION_COOKIE } from "../../auth";
+import { removeTestRows } from "./cleanup";
 import { setDraft, getDraft, setSession, getSession, clearAll } from "../store";
 import { POST as validateHandler } from "../../../app/api/chatbot/validate/route";
 import { GET as getMessageHandler, POST as postMessageHandler } from "../../../app/api/chatbot/message/route";
@@ -361,6 +362,7 @@ async function runTests() {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+  console.log(`\nCleaned up ${await removeTestRows(userId)} test transaction(s).`);
   console.log(`\n${"─".repeat(60)}`);
   console.log(`E2E API Test Results: ${passed} passed, ${failed} failed`);
   console.log(`${"─".repeat(60)}`);

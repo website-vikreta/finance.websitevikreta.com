@@ -1,22 +1,15 @@
 "use client";
 
-import { createContext, useContext, useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Navbar } from "./navbar";
 import { Sidebar } from "./sidebar";
 import { FinanceAIDrawer } from "@/components/chat/finance-ai-drawer";
-import { Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { BotFace } from "@/components/chat/bot-face";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 
 interface AppShellProps {
   children: React.ReactNode;
-}
-
-const OpenFinanceAIContext = createContext<() => void>(() => {});
-
-/** Opens the Finance AI panel from anywhere inside the shell (e.g. a "New transaction" button). */
-export function useOpenFinanceAI() {
-  return useContext(OpenFinanceAIContext);
 }
 
 /** Min/max chat panel widths in pixels. */
@@ -148,26 +141,25 @@ export function AppShell({ children }: AppShellProps) {
         <main
           className={cn(
             "min-w-0 flex-1 overflow-x-hidden overflow-y-auto transition-[padding] duration-200",
-            financeAIOpen ? "p-4 md:p-6" : "p-4 md:p-8"
+            financeAIOpen ? "p-4 md:p-6" : "p-4 pb-24 md:p-8 md:pb-24" // pb-24 keeps the last row clear of the floating bot
           )}
         >
           <div className="@container mx-auto max-w-7xl space-y-6">
-            <OpenFinanceAIContext.Provider value={handleOpenFinanceAI}>{children}</OpenFinanceAIContext.Provider>
+            {children}
           </div>
         </main>
 
-        {/* Floating "Ask Finance AI" pill at bottom-right */}
+        {/* Floating bot face at bottom-right; blinks and smiles (motion-safe only) */}
         {!financeAIOpen && (
-          <Button
+          <button
             type="button"
             onClick={handleOpenFinanceAI}
-            variant="outline"
             aria-label="Open Finance Chat Bot"
-            className="fixed right-4 bottom-4 z-30 bg-card shadow-md sm:right-6 sm:bottom-6"
+            title="Finance Chat Bot"
+            className="bot-fab group fixed right-4 bottom-4 z-30 grid size-14 place-items-center rounded-full bg-primary text-primary-foreground shadow-md transition-transform hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:right-6 sm:bottom-6"
           >
-            <Sparkles aria-hidden />
-            <span className="hidden sm:inline">Ask Finance Chat Bot</span>
-          </Button>
+            <BotFace className="size-8" />
+          </button>
         )}
 
         {/* ── Resizable Divider (desktop only, visible when chat panel is open) ── */}
@@ -218,7 +210,7 @@ export function AppShell({ children }: AppShellProps) {
                 aria-label="Widen chat panel (+40px)"
                 onClick={onExpandChat}
                 disabled={chatWidth >= CHAT_MAX_WIDTH}
-                className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-primary/20 hover:text-primary transition-colors disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-primary/20 hover:text-foreground transition-colors disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <ChevronLeft className="size-3.5" />
               </button>
@@ -229,7 +221,7 @@ export function AppShell({ children }: AppShellProps) {
                 aria-label="Narrow chat panel (-40px)"
                 onClick={onShrinkChat}
                 disabled={chatWidth <= CHAT_MIN_WIDTH}
-                className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-primary/20 hover:text-primary transition-colors disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="grid size-5 place-items-center rounded-full text-muted-foreground hover:bg-primary/20 hover:text-foreground transition-colors disabled:opacity-30 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <ChevronRight className="size-3.5" />
               </button>

@@ -7,6 +7,8 @@ import { RecentlyDeleted } from "@/components/transactions/recently-deleted";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listDeleted, listLedger } from "@/lib/transactions/queries";
 
+export const metadata = { title: "Transactions" };
+
 async function Ledger() {
   const [rows, deleted] = await Promise.all([listLedger(), listDeleted()]);
   return (

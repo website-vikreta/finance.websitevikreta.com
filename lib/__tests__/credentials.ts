@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "crypto";
-import { verifyCredentials } from "../credentials";
+import { hashPassword, verifyCredentials, verifyPassword } from "../credentials";
 
 process.env.ADMIN_EMAIL = "Manager@Example.com";
 process.env.ADMIN_PASSWORD_HASH = createHash("sha256").update("correct horse").digest("hex");
@@ -24,4 +24,9 @@ assert.equal(verifyCredentials("manager@example.com", "correct horse"), "unconfi
 process.env.ADMIN_EMAIL = "";
 assert.equal(verifyCredentials("", "x"), "unconfigured", "missing email");
 
-console.log(`Results: ${cases.length + 2} passed, 0 failed`);
+const stored = hashPassword("member pass");
+assert.ok(verifyPassword("member pass", stored), "member hash round-trip");
+assert.ok(!verifyPassword("member pas", stored), "member wrong password");
+assert.ok(!verifyPassword("member pass", "garbage"), "malformed member hash");
+
+console.log(`Results: ${cases.length + 5} passed, 0 failed`);

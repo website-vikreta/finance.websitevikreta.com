@@ -23,6 +23,7 @@ export const appUsers = pgTable(
     email: varchar("email", { length: 255 }).unique(), // Nullable; explicitly bootstrapped
     role: varchar("role", { length: 50 }).notNull().default("manager"), // Always "manager"
     isActive: boolean("is_active").notNull().default(true),
+    passwordHash: text("password_hash"), // scrypt "salt:hash"; NULL for the env-configured "admin"
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
