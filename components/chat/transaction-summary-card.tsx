@@ -4,6 +4,7 @@ import { Check, CheckCircle2, Edit2, X, XCircle, ArrowDownLeft, ArrowUpRight } f
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import type { ConfirmationTransaction } from "./types";
 
 interface TransactionSummaryCardProps {
@@ -13,6 +14,8 @@ interface TransactionSummaryCardProps {
   /** Label for a card that is no longer actionable (default "Discarded"). */
   discardedLabel?: string;
   isPendingAction?: boolean;
+  /** Likely-duplicate warning from the server. */
+  duplicate?: string;
   onConfirm?: () => void;
   onEdit?: () => void;
   onCancel?: () => void;
@@ -24,6 +27,7 @@ export function TransactionSummaryCard({
   isCancelled = false,
   discardedLabel = "Discarded",
   isPendingAction = false,
+  duplicate,
   onConfirm,
   onEdit,
   onCancel,
@@ -53,7 +57,7 @@ export function TransactionSummaryCard({
       )}
     >
       {/* Header: Type and Status */}
-      <div className="flex items-center justify-between border-b border-border/60 pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-3">
         <div className="flex items-center gap-2">
           {isIncome ? (
             <Badge
@@ -72,8 +76,8 @@ export function TransactionSummaryCard({
               <span>Expense</span>
             </Badge>
           )}
-          <span className="text-caption font-mono text-muted-foreground">
-            {transaction.txn_date}
+          <span className="text-caption text-muted-foreground whitespace-nowrap">
+            {formatDate(transaction.txn_date)}
           </span>
         </div>
 
@@ -88,11 +92,7 @@ export function TransactionSummaryCard({
               <XCircle className="size-4" aria-hidden />
               <span>{discardedLabel}</span>
             </span>
-          ) : (
-            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-caption font-medium text-primary">
-              Ready for review
-            </span>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -102,14 +102,17 @@ export function TransactionSummaryCard({
           <p className="text-caption text-muted-foreground">{isIncome ? "Client" : "For"}</p>
           <p className="mt-0.5 text-title-sm font-semibold text-foreground">
             {isIncome
-              ? transaction.client_name || "Unspecified Client"
-              : transaction.expense_description || "Unspecified Description"}
+              ? transaction.client_name || "Unknown client"
+              : transaction.expense_description || "No description"}
           </p>
+          {!isIncome && transaction.category ? (
+            <p className="text-caption text-muted-foreground">{transaction.category}</p>
+          ) : null}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 rounded-lg border border-border/50 bg-background/50 p-3">
+        <div className={cn("grid gap-3 rounded-lg border border-border/50 bg-background/50 p-3", isUSD && "grid-cols-2")}>
           <div>
-            <p className="text-caption text-muted-foreground">Original Amount</p>
+            <p className="text-caption text-muted-foreground">Amount</p>
             <p className="mt-0.5 text-title-sm font-mono font-semibold tabular-nums text-foreground">
               {isUSD ? "$" : "₹"}
               {formattedOriginalAmount}{" "}
@@ -119,85 +122,81 @@ export function TransactionSummaryCard({
             </p>
           </div>
 
-          <div>
-            <p className="text-caption text-muted-foreground">INR Equivalent</p>
-            <p
-              className={cn(
-                "mt-0.5 text-title-sm font-mono font-semibold tabular-nums",
-                isIncome ? "text-success" : "text-foreground"
-              )}
-            >
-              ₹{formattedInrAmount}
-            </p>
-          </div>
+          {isUSD ? (
+            <div>
+              <p className="text-caption text-muted-foreground">In INR</p>
+              <p
+                className={cn(
+                  "mt-0.5 text-title-sm font-mono font-semibold tabular-nums",
+                  isIncome ? "text-success" : "text-foreground"
+                )}
+              >
+                ₹{formattedInrAmount}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {/* Exchange Rate breakdown if USD */}
         {isUSD && transaction.exchange_rate !== null && (
-          <div className="flex items-center justify-between text-caption text-muted-foreground border-t border-border/40 pt-2 font-mono">
-            <span>Applied Exchange Rate</span>
-            <span className="font-semibold text-foreground tabular-nums">
+          <div className="flex items-center justify-between text-caption text-muted-foreground border-t border-border/40 pt-2">
+            <span>Exchange rate</span>
+            <span className="font-mono font-semibold text-foreground tabular-nums">
               1 USD = ₹{transaction.exchange_rate.toFixed(2)}
             </span>
           </div>
         )}
       </div>
 
-      {/* Confirmation Actions or Note */}
-      <div className="mt-4 pt-3 border-t border-border/60">
-        {!isConfirmed && !isCancelled ? (
-          <div className="space-y-2.5">
+      {/* Confirmation actions */}
+      {!isConfirmed && !isCancelled ? (
+        <div className="mt-4 space-y-2.5 border-t border-border/60 pt-3">
+          {duplicate ? (
+            <p role="alert" className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-caption text-foreground">
+              {duplicate} Confirm only if it&apos;s a separate payment.
+            </p>
+          ) : (
             <p className="text-caption text-muted-foreground">
               Nothing is saved until you confirm.
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="default"
-                disabled={isPendingAction}
-                onClick={onConfirm}
-                className="flex-1 font-semibold"
-              >
-                <Check className="size-3.5" aria-hidden />
-                Confirm
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={isPendingAction}
-                onClick={onEdit}
-                className="gap-1.5"
-              >
-                <Edit2 className="size-3.5" aria-hidden />
-                Edit
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={isPendingAction}
-                onClick={onCancel}
-                className="gap-1 text-muted-foreground hover:text-destructive"
-              >
-                <X className="size-3.5" aria-hidden />
-                Cancel
-              </Button>
-            </div>
+          )}
+          <div className="grid grid-cols-3 gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              disabled={isPendingAction}
+              onClick={onConfirm}
+              className="font-semibold"
+            >
+              <Check className="size-3.5" aria-hidden />
+              Confirm
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isPendingAction}
+              onClick={onEdit}
+              className="gap-1.5"
+            >
+              <Edit2 className="size-3.5" aria-hidden />
+              Edit
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={isPendingAction}
+              onClick={onCancel}
+              className="gap-1 text-muted-foreground hover:text-destructive"
+            >
+              <X className="size-3.5" aria-hidden />
+              Cancel
+            </Button>
           </div>
-        ) : isConfirmed ? (
-          <p className="text-caption text-success/90">
-            Saved to the ledger.
-          </p>
-        ) : (
-          <p className="text-caption text-muted-foreground">
-            {discardedLabel === "Discarded"
-              ? "Nothing was saved. You can type a new transaction at any time."
-              : "A newer summary replaced this one. Nothing was saved from it."}
-          </p>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

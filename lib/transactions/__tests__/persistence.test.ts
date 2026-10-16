@@ -17,6 +17,7 @@
  * Run: npx tsx lib/transactions/__tests__/persistence.test.ts
  */
 
+import "../../__tests__/test-db"; // must stay first: refuses the live database
 import { NextRequest } from "next/server";
 import { eq, sql, and, isNull } from "drizzle-orm";
 import { db, pool } from "../../db";

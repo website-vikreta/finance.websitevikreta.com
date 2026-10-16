@@ -29,6 +29,97 @@
       "when": 1792058176936,
       "tag": "0003_chat_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792087933940,
+      "tag": "0004_members_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792098321686,
+      "tag": "0005_admin_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792101354758,
+      "tag": "0006_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792101386605,
+      "tag": "0007_seed_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792130610558,
+      "tag": "0008_recurring_expenses",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792131497529,
+      "tag": "0009_recurring_part_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792133667152,
+      "tag": "0010_invoices",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792135839442,
+      "tag": "0011_invoice_seller",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792147800000,
+      "tag": "0012_recurring_end_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792150000000,
+      "tag": "0013_recurring_monthly_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792152000000,
+      "tag": "0014_transaction_recurring_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792154000000,
+      "tag": "0015_recurring_client",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792156000000,
+      "tag": "0016_drop_recurring_frequency",
+      "breakpoints": true
     }
   ]
 }

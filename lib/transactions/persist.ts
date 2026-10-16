@@ -17,7 +17,8 @@
  */
 
 import { db } from "@/lib/db";
-import { appUsers, clients, transactions, auditEvents } from "@/lib/db/schema";
+import { appUsers, categories, clients, transactions, auditEvents } from "@/lib/db/schema";
+import { toCategory } from "@/lib/transactions/categories";
 import { eq, and, sql, isNull } from "drizzle-orm";
 import { getDraft, getSession, setSession, type ChatSessionState } from "@/lib/chatbot/store";
 import { validateExtraction } from "@/lib/chatbot/validate";
@@ -38,7 +39,16 @@ export interface PersistConfirmationParams {
   idempotencyKey?: string;
   draft?: ExtractionResult;
   sessionState?: ChatSessionState;
+  /** Income that pays this invoice (Record payment). */
+  invoiceId?: string;
+  /** Description for an income row (e.g. "Invoice WV/2026-27/001"); expenses use the draft's. */
+  incomeNote?: string | null;
+  /** Extra write in the same DB transaction (e.g. moving a recurring bill on); an error string rolls everything back. */
+  onSaved?: (tx: DbTx, transactionId: string) => Promise<string | null>;
 }
+
+/** Thrown inside the DB transaction to roll it back with a message for the person. */
+class SaveRejected extends Error {}
 
 export type PersistResult =
   | {
@@ -98,6 +108,7 @@ export function computeCanonicalPayloadHash(payload: {
  */
 export function mapRowToConfirmationTransaction(
   row: typeof transactions.$inferSelect,
+  category?: string | null,
 ): ConfirmationTransaction {
   return {
     id: row.id,
@@ -109,6 +120,7 @@ export function mapRowToConfirmationTransaction(
     txn_date: row.txnDate,
     exchange_rate: row.exchangeRate ? Number(row.exchangeRate) : null,
     inr_amount: Number(row.amountInr),
+    ...(category !== undefined ? { category } : {}),
   };
 }
 
@@ -179,18 +191,29 @@ export function computeAmounts(
   }
 }
 
-type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The active client with this name, ignoring case and outer spaces; null if there is none. */
+export async function findClient(tx: DbTx, clientName: string): Promise<{ id: string; name: string } | null> {
+  const [found] = await tx
+    .select({ id: clients.clientId, name: clients.clientName })
+    .from(clients)
+    .where(and(isNull(clients.deletedAt), sql`lower(trim(both from ${clients.clientName})) = ${clientName.trim().toLowerCase()}`));
+  return found ?? null;
+}
+
+/** Income creates its client if new; an expense's client tag only links to an existing client. */
+export async function linkClient(tx: DbTx, typeId: number, name: string | null | undefined): Promise<{ clientId: string | null; clientNameSnapshot: string | null }> {
+  const trimmed = name?.trim();
+  if (!trimmed) return { clientId: null, clientNameSnapshot: null };
+  if (typeId === 1) return { clientId: await resolveClientId(tx, trimmed), clientNameSnapshot: trimmed };
+  const found = await findClient(tx, trimmed);
+  return { clientId: found?.id ?? null, clientNameSnapshot: found?.name ?? null };
+}
 
 /** Finds the active client by normalised name, or creates it (race-safe on the unique index). */
 export async function resolveClientId(tx: DbTx, clientName: string): Promise<string> {
-  const normalized = clientName.trim().toLowerCase();
-  const find = async () => {
-    const [found] = await tx
-      .select()
-      .from(clients)
-      .where(and(isNull(clients.deletedAt), sql`lower(trim(both from ${clients.clientName})) = ${normalized}`));
-    return found?.clientId ?? null;
-  };
+  const find = async () => (await findClient(tx, clientName))?.id ?? null;
 
   const existing = await find();
   if (existing) return existing;
@@ -203,6 +226,14 @@ export async function resolveClientId(tx: DbTx, clientName: string): Promise<str
     if (!recheck) throw err;
     return recheck;
   }
+}
+
+/** Category id for an expense: the named category if it is one of ours, else "Other". */
+export async function resolveCategoryId(tx: DbTx, name: string | null | undefined): Promise<{ id: number; name: string }> {
+  const wanted = toCategory(name) ?? "Other";
+  const [row] = await tx.select({ id: categories.id, name: categories.name }).from(categories).where(eq(categories.name, wanted));
+  if (!row) throw new Error(`Category "${wanted}" is missing; run the migrations.`);
+  return row;
 }
 
 /**
@@ -346,8 +377,8 @@ export async function confirmAndPersistTransaction(
     originalCurrency: draft.original_currency,
     amountInr,
     exchangeRate,
-    clientName: typeId === 1 ? draft.client_name : null,
-    description: typeId === 2 ? draft.expense_description : null,
+    clientName: draft.client_name?.trim() ? draft.client_name.trim() : null,
+    description: typeId === 2 ? draft.expense_description : (params.incomeNote ?? null),
     txnDate: draft.txn_date,
     createdBy: userId,
   });
@@ -402,9 +433,8 @@ export async function confirmAndPersistTransaction(
         .values({ id: userId, role: "manager", isActive: true })
         .onConflictDoNothing();
 
-      // Resolve client if income
-      const clientNameSnapshot = typeId === 1 ? draft.client_name!.trim() : null;
-      const clientId = clientNameSnapshot ? await resolveClientId(tx, clientNameSnapshot) : null;
+      const { clientId, clientNameSnapshot } = await linkClient(tx, typeId, draft.client_name);
+      const category = typeId === 2 ? await resolveCategoryId(tx, draft.category) : null;
 
       // Insert transaction
       const [insertedTxn] = await tx
@@ -419,7 +449,9 @@ export async function confirmAndPersistTransaction(
           exchangeRate,
           exchangeRateDate,
           rateSource,
-          description: typeId === 2 ? draft.expense_description!.trim() : null,
+          description: typeId === 2 ? draft.expense_description!.trim() : (params.incomeNote ?? null),
+          categoryId: category?.id ?? null,
+          invoiceId: params.invoiceId ?? null,
           txnDate: draft.txn_date as string,
           source: params.source || "chatbot",
           status: "confirmed",
@@ -449,10 +481,13 @@ export async function confirmAndPersistTransaction(
         },
       });
 
-      return insertedTxn;
+      const rejected = await params.onSaved?.(tx, insertedTxn.id);
+      if (rejected) throw new SaveRejected(rejected);
+
+      return { ...insertedTxn, categoryName: category?.name ?? null };
     });
 
-    const confirmedTransaction = mapRowToConfirmationTransaction(savedTxn);
+    const confirmedTransaction = mapRowToConfirmationTransaction(savedTxn, savedTxn.categoryName);
 
     // Update in-memory session only after DB commit succeeds
     rememberInChat({
@@ -468,6 +503,7 @@ export async function confirmAndPersistTransaction(
       transaction: confirmedTransaction,
     };
   } catch (err: unknown) {
+    if (err instanceof SaveRejected) return { ok: false, error: err.message, code: "CONFLICT", status: 409 };
     // Handle concurrent duplicate insertion
     if (isUniqueConstraintViolation(err)) {
       try {

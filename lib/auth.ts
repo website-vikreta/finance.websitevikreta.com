@@ -6,9 +6,9 @@ export const SESSION_COOKIE = "wv_finance_session";
 /** Session duration: 8 working hours. */
 export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 
+/** Role is not in the token: app_users.role is read per request so changes apply immediately. */
 export interface SessionPayload extends JWTPayload {
   userId: string;
-  role: "admin";
 }
 
 function getSecret(): Uint8Array {
@@ -22,7 +22,7 @@ function getSecret(): Uint8Array {
  * Called after successful credential check in the login server action.
  */
 export async function createSession(userId: string): Promise<string> {
-  return new SignJWT({ userId, role: "admin" } as Omit<SessionPayload, keyof JWTPayload>)
+  return new SignJWT({ userId } as Omit<SessionPayload, keyof JWTPayload>)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE_SECONDS}s`)

@@ -30,15 +30,15 @@ colors:
 typography:
   family-sans: Inter
   family-mono: JetBrains Mono
-  display-md: { size: 40px, line-height: 1.15, tracking: -1.5px, weight: 700 }
-  display-sm: { size: 32px, line-height: 1.2, tracking: -1px, weight: 700 }
-  title-lg: { size: 24px, line-height: 1.3, tracking: -0.3px, weight: 700 }
-  title-md: { size: 18px, line-height: 1.4, weight: 600 }
-  title-sm: { size: 16px, line-height: 1.4, weight: 600 }
-  body-md: { size: 16px, line-height: 1.55 }
-  body-sm: { size: 14px, line-height: 1.55 }
-  caption: { size: 13px, line-height: 1.4, weight: 500 }
-  eyebrow: { size: 12px, line-height: 1.4, tracking: 1.5px, weight: 600 }
+  display-md: { size: 36px, line-height: 1.15, tracking: -1.5px, weight: 700 }
+  display-sm: { size: 28px, line-height: 1.2, tracking: -1px, weight: 700 }
+  title-lg: { size: 22px, line-height: 1.3, tracking: -0.3px, weight: 700 }
+  title-md: { size: 16px, line-height: 1.4, weight: 600 }
+  title-sm: { size: 15px, line-height: 1.4, weight: 600 }
+  body-md: { size: 15px, line-height: 1.55 }
+  body-sm: { size: 13px, line-height: 1.55 }
+  caption: { size: 12px, line-height: 1.4, weight: 500 }
+  eyebrow: { size: 11px, line-height: 1.4, tracking: 1.5px, weight: 600 }
   micro: { size: 11px, line-height: 1.4, weight: 500 }
 
 radius:
@@ -95,15 +95,15 @@ Inter carries every role; JetBrains Mono is for money, rates and IDs (always wit
 
 | Role | Class | Spec | Use |
 |------|-------|------|-----|
-| Hero / big page title | `text-display-md` | 40 / 1.15, −1.5px, 700 | Dashboard hero only |
-| Page title | `text-title-lg md:text-display-sm` | 24→32, 700 | `<h1>` via `PageHeader` |
-| Section / card title | `text-title-md` | 18 / 1.4, 600 | Card headings |
-| Small title | `text-title-sm` | 16 / 1.4, 600 | List item names |
-| KPI figure | `font-mono text-title-lg sm:text-display-sm tabular-nums` | 24→32 | KPI cards, stat tiles |
-| Body | `text-body-sm` | 14 / 1.55 | Tables, descriptions (UI default) |
-| Meta | `text-caption` | 13 / 1.4, 500 | Badges, sub-lines, footers |
+| Hero / big page title | `text-display-md` | 36 / 1.15, −1.5px, 700 | Dashboard hero only |
+| Page title | `text-title-lg md:text-display-sm` | 22→28, 700 | `<h1>` via `PageHeader` |
+| Section / card title | `text-title-md` | 16 / 1.4, 600 | Card headings |
+| Small title | `text-title-sm` | 15 / 1.4, 600 | List item names |
+| KPI figure | `font-mono text-title-lg sm:text-display-sm tabular-nums` | 22→28 | KPI cards, stat tiles |
+| Body | `text-body-sm` | 13 / 1.55 | Tables, descriptions (UI default) |
+| Meta | `text-caption` | 12 / 1.4, 500 | Badges, sub-lines, footers |
 | Micro | `text-micro` | 11 / 1.4, 500 | Chat timestamps and tiny status badges only |
-| Label | `text-caption` | 13, 500, sentence case | Stat labels, table headers |
+| Label | `text-caption` | 12, 500, sentence case | Stat labels, table headers |
 
 Each type class sets size, line-height, tracking and weight together; don't stack `font-bold` or `tracking-*` on top.
 
@@ -112,6 +112,7 @@ Each type class sets size, line-height, tracking and weight together; don't stac
 - Radius: cards and panels `rounded-xl` (12px); buttons and inputs `rounded-lg` (8px); small chips `rounded-md` (6px); badges, avatars and dots `rounded-full`.
 - Card padding `p-6` (stat tiles `p-5`); sections stacked with `space-y-6`; grids `gap-4` (tiles) or `gap-6` (panels).
 - Shell: top bar 64px white with bottom hairline; sidebar white with right hairline; content `max-w-7xl`, padded `p-4 md:p-8`.
+- Card spacing: 24px between cards everywhere, side by side and stacked (`gap-6` in grids, `space-y-6` in stacks), at every breakpoint. Never wrap cards in `display: contents`; `space-y` only spaces direct children.
 
 ## Components
 

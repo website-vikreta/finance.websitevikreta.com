@@ -25,6 +25,7 @@ export const EMPTY_DRAFT: ExtractionResult = {
   client_name: null,
   expense_description: null,
   txn_date: null,
+  category: null,
 };
 
 /**
@@ -48,5 +49,6 @@ export function mergeDraft(
     client_name: incoming.client_name ?? existing.client_name,
     expense_description: incoming.expense_description ?? existing.expense_description,
     txn_date: incoming.txn_date ?? existing.txn_date,
+    category: incoming.category ?? existing.category ?? null,
   };
 }

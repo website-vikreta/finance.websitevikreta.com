@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { RotateCcw, Sparkles, X } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
+import { BotFace } from "./bot-face";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChatInput } from "./chat-input";
 import { ChatMessageList } from "./chat-message-list";
@@ -22,7 +22,6 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
     status,
     isLoading,
     isPendingAction,
-    welcomeTimestamp,
     scrollTop,
     loadInitialState,
     sendMessage,
@@ -60,7 +59,7 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
       <aside
         aria-label="Finance Chat Bot Assistant"
         className={cn(
-          "flex flex-col border-border bg-card transition-[transform,opacity] duration-200 ease-in-out",
+          "flex flex-col border-border bg-card print:hidden transition-[transform,opacity] duration-200 ease-in-out",
           "fixed top-16 bottom-0 right-0 z-50 w-full sm:w-[400px] shadow-2xl",
           "xl:static xl:z-auto xl:h-full xl:min-h-0 xl:shrink-0 xl:shadow-none",
           isOpen
@@ -74,21 +73,10 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
         >
           <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-muted/60 px-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="grid size-9 place-items-center rounded-full border border-border bg-surface-elevated text-primary shadow-xs shrink-0">
-                <Sparkles className="size-4" aria-hidden />
+              <div className="grid size-9 place-items-center rounded-full border border-border bg-surface-elevated text-foreground shadow-xs shrink-0">
+                <BotFace className="size-5" />
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-title-sm font-semibold text-foreground truncate">Finance Chat Bot</h2>
-                  {status === "READY_FOR_CONFIRMATION" ? (
-                    <Badge variant="outline" className="border-primary/40 bg-primary/10 px-1.5 py-0 text-micro font-medium text-primary shrink-0">Review pending</Badge>
-                  ) : status === "AWAITING_EXCHANGE_RATE" ? (
-                    <Badge variant="outline" className="border-warning/40 bg-warning/10 px-1.5 py-0 text-micro font-medium text-warning shrink-0">Rate required</Badge>
-                  ) : status === "CONFIRMED" ? (
-                    <Badge variant="outline" className="border-success/40 bg-success/10 px-1.5 py-0 text-micro font-medium text-success shrink-0">Confirmed</Badge>
-                  ) : null}
-                </div>
-              </div>
+              <h2 className="truncate text-title-sm font-semibold text-foreground">Finance Chat Bot</h2>
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
@@ -105,7 +93,6 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
             messages={messages}
             isLoading={isLoading}
             isPendingAction={isPendingAction}
-            welcomeTimestamp={welcomeTimestamp}
             initialScrollTop={scrollTop}
             onScrollPositionChange={setScrollTop}
             onConfirm={() => confirmAction("CONFIRM")}

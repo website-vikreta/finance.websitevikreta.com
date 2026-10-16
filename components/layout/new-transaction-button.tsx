@@ -1,16 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useOpenFinanceAI } from "@/components/layout/app-shell";
+import { TransactionFormDialog } from "@/components/transactions/transaction-form-dialog";
 
-/** Transactions are entered through Finance AI, so "new" opens the chat panel. */
+/** Opens the manual entry form; the floating bot covers chat entry. */
 export function NewTransactionButton({ label = "New transaction" }: { label?: string }) {
-  const openFinanceAI = useOpenFinanceAI();
+  const [open, setOpen] = useState(false);
   return (
-    <Button onClick={openFinanceAI} className="gap-2">
-      <Plus aria-hidden />
-      {label}
-    </Button>
+    <>
+      <Button onClick={() => setOpen(true)} className="gap-2">
+        <Plus aria-hidden />
+        {label}
+      </Button>
+      <TransactionFormDialog open={open} onOpenChange={setOpen} row={null} />
+    </>
   );
 }

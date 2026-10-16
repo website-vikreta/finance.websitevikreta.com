@@ -22,6 +22,7 @@
  *   - perform side-effects of any kind
  */
 
+import { toCategory } from "@/lib/transactions/categories";
 import type { ExtractionResult } from "./extract";
 import { convertUsdToInrDecimal, DecimalPrecisionError } from "@/lib/currency/precision";
 
@@ -53,6 +54,8 @@ export interface ConfirmationTransaction {
   exchange_rate: number | null;
   /** INR equivalent. Equals original_amount for INR; calculated for USD. */
   inr_amount: number;
+  /** Expense category shown on the card; null for income. */
+  category?: string | null;
 }
 
 // --- Rate parsing ------------------------------------------------------------
@@ -146,6 +149,7 @@ export function buildConfirmation(
         txn_date,
         exchange_rate: null,
         inr_amount: original_amount,
+        category: categoryOf(draft),
       },
     };
   }
@@ -182,6 +186,12 @@ export function buildConfirmation(
       txn_date,
       exchange_rate,
       inr_amount,
+      category: categoryOf(draft),
     },
   };
+}
+
+/** Expenses always land in a category; "Other" when the bot found nothing better. */
+function categoryOf(draft: ExtractionResult): string | null {
+  return draft.type === "expense" ? (toCategory(draft.category) ?? "Other") : null;
 }

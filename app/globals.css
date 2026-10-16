@@ -77,51 +77,51 @@
   --radius-4xl: 9999px;
 
   /* Type scale (DESIGN.md typography). Use as text-display-xl, text-title-md, ... */
-  --text-display-xl: 72px;
+  --text-display-xl: 64px;
   --text-display-xl--line-height: 1.05;
   --text-display-xl--letter-spacing: -2.5px;
   --text-display-xl--font-weight: 700;
-  --text-display-lg: 56px;
+  --text-display-lg: 48px;
   --text-display-lg--line-height: 1.1;
   --text-display-lg--letter-spacing: -2px;
   --text-display-lg--font-weight: 700;
-  --text-display-md: 40px;
+  --text-display-md: 36px;
   --text-display-md--line-height: 1.15;
   --text-display-md--letter-spacing: -1.5px;
   --text-display-md--font-weight: 700;
-  --text-display-sm: 32px;
+  --text-display-sm: 28px;
   --text-display-sm--line-height: 1.2;
   --text-display-sm--letter-spacing: -1px;
   --text-display-sm--font-weight: 700;
-  --text-title-lg: 24px;
+  --text-title-lg: 22px;
   --text-title-lg--line-height: 1.3;
   --text-title-lg--letter-spacing: -0.3px;
   --text-title-lg--font-weight: 700;
-  --text-title-md: 18px;
+  --text-title-md: 16px;
   --text-title-md--line-height: 1.4;
   --text-title-md--font-weight: 600;
-  --text-title-sm: 16px;
+  --text-title-sm: 15px;
   --text-title-sm--line-height: 1.4;
   --text-title-sm--font-weight: 600;
-  --text-stat: 56px;
+  --text-stat: 48px;
   --text-stat--line-height: 1;
   --text-stat--letter-spacing: -1.5px;
   --text-stat--font-weight: 700;
-  --text-body-md: 16px;
+  --text-body-md: 15px;
   --text-body-md--line-height: 1.55;
-  --text-body-sm: 14px;
+  --text-body-sm: 13px;
   --text-body-sm--line-height: 1.55;
-  --text-caption: 13px;
+  --text-caption: 12px;
   --text-caption--line-height: 1.4;
   --text-caption--font-weight: 500;
   --text-micro: 11px;
   --text-micro--line-height: 1.4;
   --text-micro--font-weight: 500;
-  --text-eyebrow: 12px;
+  --text-eyebrow: 11px;
   --text-eyebrow--line-height: 1.4;
   --text-eyebrow--letter-spacing: 1.5px;
   --text-eyebrow--font-weight: 600;
-  --text-code: 14px;
+  --text-code: 13px;
   --text-code--line-height: 1.55;
 }
 
@@ -199,5 +199,59 @@
   }
   html {
     @apply font-sans;
+  }
+}
+/* Floating Finance Chat Bot face: periodic blink + a bigger smile on hover. */
+@media (prefers-reduced-motion: no-preference) {
+  .bot-fab .bot-eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: bot-blink 4s ease-in-out infinite;
+  }
+  .bot-fab .bot-smile {
+    transform-box: fill-box;
+    transform-origin: center top;
+    transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .bot-fab:hover .bot-smile {
+    transform: scaleY(1.6);
+  }
+}
+
+@keyframes bot-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+
+/* Reports → Export PDF uses the browser's print. A zero page margin drops the browser's
+   date/URL header and footer; .print-document repeats its padding on every page instead. */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  .print-document {
+    padding: 12mm 14mm;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  body {
+    background: var(--card);
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  /* Only the document prints, however printing starts (Download PDF or Cmd+P):
+     no toasts, dialogs, menus, tooltips or the Next.js dev badge. */
+  [data-sonner-toaster],
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-content"],
+  [data-slot="select-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="tooltip-content"],
+  nextjs-portal {
+    display: none !important;
   }
 }

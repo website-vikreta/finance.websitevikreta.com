@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
-import { formatDate, formatINR } from "@/lib/format";
+import { formatDate, formatINR, formatTime } from "@/lib/format";
 import type { LedgerRow } from "@/lib/transactions/queries";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +33,7 @@ export function RecentTransactions({ rows }: { rows: LedgerRow[] }) {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-body-sm font-medium text-foreground">{row.title}</p>
-                  <p className="text-caption text-muted-foreground">{formatDate(row.date)}</p>
+                  <p className="text-caption text-muted-foreground">{formatDate(row.date)} · {formatTime(row.time)}</p>
                 </div>
                 <p className={cn("shrink-0 font-mono text-body-sm font-semibold tabular-nums", isIncome ? "text-success" : "text-foreground")}>
                   {isIncome ? "+" : "−"}
