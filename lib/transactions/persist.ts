@@ -42,8 +42,13 @@ export interface PersistConfirmationParams {
   /** Income that pays this invoice (Record payment). */
   invoiceId?: string;
   /** Description for an income row (e.g. "Invoice WV/2026-27/001"); expenses use the draft's. */
-  incomeNote?: string;
+  incomeNote?: string | null;
+  /** Extra write in the same DB transaction (e.g. moving a recurring bill on); an error string rolls everything back. */
+  onSaved?: (tx: DbTx, transactionId: string) => Promise<string | null>;
 }
+
+/** Thrown inside the DB transaction to roll it back with a message for the person. */
+class SaveRejected extends Error {}
 
 export type PersistResult =
   | {
@@ -208,14 +213,7 @@ export async function linkClient(tx: DbTx, typeId: number, name: string | null |
 
 /** Finds the active client by normalised name, or creates it (race-safe on the unique index). */
 export async function resolveClientId(tx: DbTx, clientName: string): Promise<string> {
-  const normalized = clientName.trim().toLowerCase();
-  const find = async () => {
-    const [found] = await tx
-      .select()
-      .from(clients)
-      .where(and(isNull(clients.deletedAt), sql`lower(trim(both from ${clients.clientName})) = ${normalized}`));
-    return found?.clientId ?? null;
-  };
+  const find = async () => (await findClient(tx, clientName))?.id ?? null;
 
   const existing = await find();
   if (existing) return existing;
@@ -379,8 +377,8 @@ export async function confirmAndPersistTransaction(
     originalCurrency: draft.original_currency,
     amountInr,
     exchangeRate,
-    clientName: typeId === 1 ? draft.client_name : null,
-    description: typeId === 2 ? draft.expense_description : null,
+    clientName: draft.client_name?.trim() ? draft.client_name.trim() : null,
+    description: typeId === 2 ? draft.expense_description : (params.incomeNote ?? null),
     txnDate: draft.txn_date,
     createdBy: userId,
   });
@@ -435,9 +433,7 @@ export async function confirmAndPersistTransaction(
         .values({ id: userId, role: "manager", isActive: true })
         .onConflictDoNothing();
 
-      // Resolve client if income
-      const clientNameSnapshot = typeId === 1 ? draft.client_name!.trim() : null;
-      const clientId = clientNameSnapshot ? await resolveClientId(tx, clientNameSnapshot) : null;
+      const { clientId, clientNameSnapshot } = await linkClient(tx, typeId, draft.client_name);
       const category = typeId === 2 ? await resolveCategoryId(tx, draft.category) : null;
 
       // Insert transaction

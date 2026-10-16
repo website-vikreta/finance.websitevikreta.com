@@ -29,6 +29,10 @@ export interface LedgerRow {
   detail: string | null;
   /** Expense category name; null for income (and for expenses saved before categories existed). */
   category: string | null;
+  /** Client name if associated with a client (income or tagged expense). */
+  clientName?: string | null;
+  /** The recurring bill this expense paid, if any. */
+  bill?: { id: string; name: string } | null;
   originalAmount: number;
   originalCurrency: "INR" | "USD";
   amountInr: number;
