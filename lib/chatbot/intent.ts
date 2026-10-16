@@ -44,5 +44,14 @@ export function isConfirm(text: string): boolean {
   return CONFIRM.test(normalize(text));
 }
 
+const START = /^(i (want|would like|need) to |i'?d like to |let'?s |please )?(add|record|log|enter|new)( a| an| new| one)? (expense|income)( please)?$|^(new|naya|nayi|ek) (expense|income)( add karna hai| add karo| daalna hai)?$|^(expense|income) (add karna hai|add karo|daalna hai|record karna hai)$/;
+
+/** "I want to add an expense" (the quick buttons) starts a fresh entry of that type. */
+export function startIntent(text: string): "expense" | "income" | null {
+  const m = normalize(text).match(START);
+  if (!m) return null;
+  return m[0].includes("income") ? "income" : "expense";
+}
+
 export const HELP_TEXT =
   "I record income and expenses. Try “Paid ₹5,000 for office rent today” or “Acme paid $500 for design work yesterday”. You can also ask “How much did we spend this month?”";
