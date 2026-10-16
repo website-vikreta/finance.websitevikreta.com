@@ -22,6 +22,7 @@ import {
   type PersistError,
 } from "@/lib/transactions/persist";
 import { duplicateMessage, findDuplicate } from "@/lib/transactions/duplicates";
+import { redoPayment, undoPayment } from "@/lib/transactions/recurring";
 import { toCategory } from "@/lib/transactions/categories";
 
 export interface TransactionInput {
@@ -220,6 +221,11 @@ export async function updateTransaction(userId: string, id: string, raw: unknown
 export async function deleteTransaction(userId: string, id: string): Promise<ManageResult> {
   try {
     return await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(transactions).where(and(eq(transactions.id, id), isNull(transactions.deletedAt))).for("update");
+      if (!row) return { ok: false, error: "This transaction was already deleted." } as ManageResult;
+      const blocked = await undoPayment(tx, userId, row);
+      if (blocked) return { ok: false, error: blocked } as ManageResult;
+
       const [deleted] = await tx
         .update(transactions)
         .set({ deletedAt: new Date(), deletedBy: userId, updatedAt: new Date() })
@@ -249,6 +255,8 @@ export async function restoreTransaction(userId: string, id: string): Promise<Ma
     return await db.transaction(async (tx) => {
       const [row] = await tx.select().from(transactions).where(eq(transactions.id, id)).for("update");
       if (!row || row.deletedAt === null) return { ok: false, error: "This transaction isn't deleted." } as ManageResult;
+      const blocked = await redoPayment(tx, userId, row);
+      if (blocked) return { ok: false, error: blocked } as ManageResult;
 
       // The client may have been removed meanwhile; re-link income to an active client by name.
       const clientId = row.typeId === 1 && row.clientNameSnapshot ? await resolveClientId(tx, row.clientNameSnapshot) : row.clientId;
