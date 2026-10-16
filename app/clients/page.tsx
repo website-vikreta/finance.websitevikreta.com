@@ -1,10 +1,10 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { AppShell } from "@/components/layout/app-shell";
-import { NewTransactionButton } from "@/components/layout/new-transaction-button";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/layout/stat-tile";
 import { ClientsGrid } from "@/components/clients/clients-grid";
+import { AddClientButton } from "@/components/clients/add-client-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatINR } from "@/lib/format";
 import { clientSummaries } from "@/lib/transactions/queries";
@@ -31,8 +31,11 @@ async function ClientsData() {
         <div className="rounded-xl border border-dashed border-border bg-card px-6 py-14 text-center">
           <p className="text-title-sm">No clients yet</p>
           <p className="mt-1 text-body-sm text-muted-foreground">
-            A client is added automatically the first time you record income from them.
+            Add a client to track their receivables, invoices, and payments.
           </p>
+          <div className="mt-4 flex items-center justify-center">
+            <AddClientButton />
+          </div>
         </div>
       ) : (
         <ClientsGrid clients={clients} owed={Object.fromEntries(owed.byClient)} />
@@ -46,7 +49,7 @@ export default function ClientsPage() {
     <AppShell>
       <PageHeader
         title="Clients"
-        action={<NewTransactionButton label="Record income" />}
+        action={<AddClientButton />}
       />
       <Suspense
         fallback={
