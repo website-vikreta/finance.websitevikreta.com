@@ -9,8 +9,9 @@ import { TrendChart } from "@/components/dashboard/trend-chart";
 import { UpcomingBills } from "@/components/dashboard/upcoming-bills";
 import { Skeleton } from "@/components/ui/skeleton";
 import { percentChange } from "@/lib/format";
-import { clientSummaries, expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals } from "@/lib/transactions/queries";
+import { expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals } from "@/lib/transactions/queries";
 import { listRecurring } from "@/lib/transactions/recurring";
+import { receivables } from "@/lib/invoices/invoices";
 import { todayInIndia } from "@/lib/transactions/period";
 
 export const metadata = { title: "Dashboard" };
@@ -29,8 +30,9 @@ async function DashboardData() {
   const months = await monthlyTotals(MONTHS);
   const thisMonth = months[months.length - 1];
   const lastMonth = months[months.length - 2];
-  const [clients, paidThisMonth, spentThisMonth, recent, bills] = await Promise.all([
-    clientSummaries(),
+  const today = todayInIndia();
+  const [owed, paidThisMonth, spentThisMonth, recent, bills] = await Promise.all([
+    receivables(today),
     incomeBreakdown(thisMonth.month),
     expenseBreakdown(thisMonth.month),
     listLedger(5),
@@ -45,7 +47,13 @@ async function DashboardData() {
     { id: "money-in", label: `Money in · ${month}`, amount: thisMonth.income, ...change(thisMonth.income, lastMonth.income, true) },
     { id: "money-out", label: `Money out · ${month}`, amount: thisMonth.expense, ...change(thisMonth.expense, lastMonth.expense, false) },
     { id: "net", label: `Net · ${month}`, amount: netNow, ...change(netNow, netBefore, true) },
-    { id: "clients-paid", label: `Clients paid · ${month}`, amount: paidThisMonth.length, isCount: true, note: `of ${clients.length}` },
+    {
+      id: "owed",
+      label: "Owed to us",
+      amount: owed.total.INR,
+      note: [owed.total.USD > 0 ? `+ $${owed.total.USD.toLocaleString("en-US")}` : null, owed.total.overdue > 0 ? `${owed.total.overdue} overdue` : "Nothing overdue"].filter(Boolean).join(" · "),
+      tone: owed.total.overdue > 0 ? "bad" : "neutral",
+    },
   ];
 
   return (
@@ -66,7 +74,7 @@ async function DashboardData() {
           <BreakdownDonut title={`Who paid us · ${month}`} items={paidThisMonth} empty="No income this month." />
         </div>
         <div className="min-w-0 @4xl:col-span-4">
-          <UpcomingBills rows={bills} today={todayInIndia()} />
+          <UpcomingBills rows={bills} today={today} />
         </div>
         <div className="min-w-0 @4xl:col-span-4">
           <RecentTransactions rows={recent} />

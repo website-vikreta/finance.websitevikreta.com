@@ -5,7 +5,9 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { formatDate, formatINR, formatShare } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { ClientSummary } from "@/lib/transactions/queries";
+import type { Owed } from "@/lib/invoices/invoices";
 
 const SORTS = {
   received: { label: "Received", compare: (a: ClientSummary, b: ClientSummary) => b.totalReceived - a.totalReceived },
@@ -18,7 +20,11 @@ const SORTS = {
 
 type Sort = keyof typeof SORTS;
 
-export function ClientsGrid({ clients }: { clients: ClientSummary[] }) {
+/** "₹50,000 + $1,200" for what a client still owes on invoices. */
+const owedText = (o: Owed) =>
+  [o.INR > 0 ? formatINR(o.INR) : null, o.USD > 0 ? `$${o.USD.toLocaleString("en-US")}` : null].filter(Boolean).join(" + ");
+
+export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed: Record<string, Owed> }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort>("received");
   const totalReceived = clients.reduce((s, c) => s + c.totalReceived, 0);
@@ -71,6 +77,15 @@ export function ClientsGrid({ clients }: { clients: ClientSummary[] }) {
                       <dt className="text-muted-foreground">Payments</dt>
                       <dd className="tabular-nums text-foreground">{c.payments}</dd>
                     </div>
+                    {owed[c.id] && (owed[c.id].INR > 0 || owed[c.id].USD > 0) ? (
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted-foreground">Owes</dt>
+                        <dd className={cn("font-mono font-semibold tabular-nums", owed[c.id].overdue > 0 ? "text-destructive" : "text-foreground")}>
+                          {owedText(owed[c.id])}
+                          {owed[c.id].overdue > 0 ? <span className="ml-1 font-sans text-caption font-normal">({owed[c.id].overdue} overdue)</span> : null}
+                        </dd>
+                      </div>
+                    ) : null}
                     <div className="flex justify-between gap-3">
                       <dt className="text-muted-foreground">Last payment</dt>
                       <dd className="text-foreground">{c.lastPaymentDate ? formatDate(c.lastPaymentDate) : "None yet"}</dd>

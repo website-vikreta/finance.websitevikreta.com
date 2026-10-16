@@ -11,6 +11,8 @@ import { isAdmin } from "@/lib/credentials";
 import { requireAuthAction } from "@/lib/server-auth";
 import { cn } from "@/lib/utils";
 import { AddMemberForm } from "./add-member-form";
+import { CompanyProfileForm } from "./company-profile-form";
+import { getCompanyProfile } from "@/lib/invoices/company";
 import { RemoveMemberButton } from "./remove-member-button";
 
 export const metadata = { title: "Settings" };
@@ -91,6 +93,24 @@ async function Members() {
   );
 }
 
+/** Printed on every invoice. Admins edit it (with a confirmation panel); managers see it filled in, read-only. */
+async function Company() {
+  const auth = await requireAuthAction();
+  if (!auth.ok) return null;
+  const [profile, admin] = await Promise.all([getCompanyProfile(), isAdmin(auth.session.userId)]);
+
+  return (
+    <section className="@container rounded-xl border border-border bg-card p-6">
+      <h2 className="text-title-md">Company profile</h2>
+      {admin || profile ? (
+        <CompanyProfileForm profile={profile} readOnly={!admin} />
+      ) : (
+        <p className="mt-3 text-body-sm text-muted-foreground">Not set up yet. Ask an admin to fill it in before creating invoices.</p>
+      )}
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   return (
     <AppShell>
@@ -108,6 +128,10 @@ export default function SettingsPage() {
           <Row label="Entry">Finance AI, confirmed before saving</Row>
         </Card>
       </div>
+
+      <Suspense fallback={<Skeleton className="h-96 rounded-xl" />}>
+        <Company />
+      </Suspense>
 
       <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
         <Members />

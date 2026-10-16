@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { hashPassword, isAdmin } from "@/lib/credentials";
+import { saveCompanyProfile } from "@/lib/invoices/company";
 import { db } from "@/lib/db";
 import { appUsers, auditEvents } from "@/lib/db/schema";
 import { requireAuthAction } from "@/lib/server-auth";
@@ -87,4 +88,14 @@ export async function removeMemberAction(id: string): Promise<AddMemberResult> {
 
   revalidatePath("/settings");
   return { ok: true };
+}
+
+/** Admins edit the company details printed on invoices. */
+export async function saveCompanyProfileAction(_prev: AddMemberResult, formData: FormData): Promise<AddMemberResult> {
+  const auth = await requireAuthAction();
+  if (!auth.ok) return { ok: false, error: "Session expired. Sign in again." };
+  if (!(await isAdmin(auth.session.userId))) return { ok: false, error: "Only an admin can edit the company profile." };
+  const result = await saveCompanyProfile(auth.session.userId, Object.fromEntries(formData));
+  if (result.ok) revalidatePath("/settings");
+  return result;
 }

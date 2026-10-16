@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState, useTransition } from "react";
 import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,10 +14,23 @@ const ROLES = [
 ];
 
 export function AddMemberForm() {
-  const [state, action, isPending] = useActionState<AddMemberResult, FormData>(addMemberAction, { ok: false });
+  const [state, setState] = useState<AddMemberResult>({ ok: false });
+  const [isPending, startTransition] = useTransition();
+
+  // A plain submit handler, not a form action: React resets action forms even when the server
+  // rejects the input, which would wipe what was typed. Only a successful add clears the fields.
+  function submit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    startTransition(async () => {
+      const result = await addMemberAction(state, new FormData(form));
+      setState(result);
+      if (result.ok) form.reset();
+    });
+  }
 
   return (
-    <form action={action} noValidate className="mt-4 flex flex-col gap-3 @xl:flex-row @xl:flex-wrap @xl:items-end">
+    <form onSubmit={submit} noValidate className="mt-4 flex flex-col gap-3 @xl:flex-row @xl:flex-wrap @xl:items-end">
       <div className="flex flex-1 flex-col gap-2">
         <Label htmlFor="member-email">Email</Label>
         <Input id="member-email" name="email" type="email" autoComplete="off" placeholder="name@websitevikreta.com" disabled={isPending} aria-invalid={Boolean(state.error)} required />

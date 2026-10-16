@@ -71,6 +71,20 @@
       "when": 1792131497529,
       "tag": "0009_recurring_part_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792133667152,
+      "tag": "0010_invoices",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792135839442,
+      "tag": "0011_invoice_seller",
+      "breakpoints": true
     }
   ]
 }
