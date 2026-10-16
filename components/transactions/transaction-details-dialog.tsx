@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -36,6 +37,14 @@ export function TransactionDetailsDialog({ row, sourceLabel, onOpenChange, onEdi
               <Detail label="Entered at">{formatTime(row.time)}</Detail>
               <Detail label="Type">{row.type === "income" ? "Income" : "Expense"}</Detail>
               {row.type === "expense" && row.category ? <Detail label="Category">{row.category}</Detail> : null}
+              {row.type === "expense" && row.clientName ? <Detail label="Client">{row.clientName}</Detail> : null}
+              {row.bill ? (
+                <Detail label="Bill">
+                  <Link href={`/transactions/recurring/${row.bill.id}`} className="underline underline-offset-4">
+                    {row.bill.name}
+                  </Link>
+                </Detail>
+              ) : null}
               {row.type === "income" && row.detail ? <Detail label="For">{row.detail}</Detail> : null}
               {row.originalCurrency === "USD" ? (
                 <Detail label="Original">

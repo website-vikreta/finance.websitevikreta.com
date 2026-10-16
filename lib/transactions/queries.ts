@@ -99,6 +99,9 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
     type_id: number;
     title: string;
     detail: string | null;
+    client_name: string | null;
+    bill_id: string | null;
+    bill_name: string | null;
     category: string | null;
     original_amount: string;
     original_currency: "INR" | "USD";
@@ -115,12 +118,15 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
                 THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
                 ELSE coalesce(t.description, 'Expense') END AS title,
            CASE WHEN t.type_id = ${INCOME} THEN t.description END AS detail,
+           coalesce(c.client_name, t.client_name_snapshot) AS client_name,
            cat.name AS category,
+           t.recurring_id AS bill_id, r.description AS bill_name,
            t.original_amount, t.original_currency, t.amount_inr, t.exchange_rate, t.source,
            to_char(t.deleted_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS deleted_at
     FROM transactions t
     LEFT JOIN clients c ON c.client_id = t.client_id
     LEFT JOIN categories cat ON cat.id = t.category_id
+    LEFT JOIN recurring_expenses r ON r.id = t.recurring_id
     WHERE ${deleted ? RESTORABLE : sql`t.deleted_at IS NULL`}
     ORDER BY ${deleted ? sql`t.deleted_at DESC` : sql`t.txn_date DESC, t.created_at DESC`}
     ${limit ? sql`LIMIT ${limit}` : sql``}
@@ -134,6 +140,8 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
     title: r.title,
     detail: r.detail,
     category: r.category,
+    clientName: r.client_name,
+    bill: r.bill_id ? { id: r.bill_id, name: r.bill_name ?? "Bill" } : null,
     originalAmount: Number(r.original_amount),
     originalCurrency: r.original_currency,
     amountInr: Number(r.amount_inr),

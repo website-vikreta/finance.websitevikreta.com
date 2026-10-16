@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, Download, Info, Pencil, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -264,6 +265,14 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
                             <p className="hidden truncate text-caption text-muted-foreground @xl:block">
                               {isIncome ? "Income" : "Expense"}
                               {(isIncome ? row.detail : row.category) ? ` · ${isIncome ? row.detail : row.category}` : null}
+                              {row.bill ? (
+                                <>
+                                  {" · "}
+                                  <Link href={`/transactions/recurring/${row.bill.id}`} className="underline-offset-4 hover:text-foreground hover:underline">
+                                    {row.bill.name}
+                                  </Link>
+                                </>
+                              ) : null}
                             </p>
                           </div>
                         </div>
