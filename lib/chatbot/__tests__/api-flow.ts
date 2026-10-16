@@ -10,6 +10,7 @@
  * Run:  npx tsx lib/chatbot/__tests__/api-flow.ts
  */
 
+import "../../__tests__/test-db"; // must stay first: refuses the live database
 import { NextRequest } from "next/server";
 import { createSession, SESSION_COOKIE } from "../../auth";
 import { removeTestRows } from "./cleanup";

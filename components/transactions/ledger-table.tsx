@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, Pencil, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, Download, Info, Pencil, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { formatDate, formatINR, formatTime } from "@/lib/format";
 import type { LedgerRow } from "@/lib/transactions/queries";
+import { SOURCE_LABELS, toCsv } from "@/lib/transactions/csv";
+import { todayInIndia } from "@/lib/transactions/period";
 import { DeleteTransactionDialog } from "./delete-transaction-dialog";
+import { TransactionDetailsDialog } from "./transaction-details-dialog";
 import { TransactionFormDialog } from "./transaction-form-dialog";
 import { cn } from "@/lib/utils";
 
@@ -23,17 +26,12 @@ const FILTERS = [
 
 type Filter = (typeof FILTERS)[number]["value"];
 
-const SOURCE_LABELS: Record<string, string> = {
-  chatbot: "Finance AI",
-  manual: "Manual",
-  bank_import: "Bank import",
-};
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 function matches(row: LedgerRow, query: string): boolean {
   if (!query) return true;
-  const haystack = [row.title, row.detail, SOURCE_LABELS[row.source] ?? row.source, formatDate(row.date), row.originalCurrency]
+  const haystack = [row.title, row.detail, row.category, SOURCE_LABELS[row.source] ?? row.source, formatDate(row.date), row.originalCurrency]
     .join(" ")
     .toLowerCase();
   return haystack.includes(query);
@@ -47,7 +45,7 @@ function FilterSelect({ id, label, value, onChange, options }: { id: string; lab
     <div className="flex min-w-0 flex-col gap-1.5">
       <Label htmlFor={id} className="text-caption text-muted-foreground">{label}</Label>
       <Select items={options} value={value} onValueChange={(v) => onChange(String(v))}>
-        <SelectTrigger id={id} className="w-full min-w-36">
+        <SelectTrigger id={id} className="w-full @3xl:min-w-36">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -72,7 +70,7 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [currency, setCurrency] = useState("all");
-  const [source, setSource] = useState("all");
+  const [category, setCategory] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sort, setSort] = useState<Sort>({ key: "date", dir: "desc" });
@@ -81,6 +79,7 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<LedgerRow | null>(null);
   const [deleting, setDeleting] = useState<LedgerRow | null>(null);
+  const [viewing, setViewing] = useState<LedgerRow | null>(null);
 
   const openForm = (row: LedgerRow | null) => {
     setEditing(row);
@@ -92,11 +91,11 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
     set(v);
     setPage(0);
   };
-  const sources = [...new Set(rows.map((r) => r.source))];
-  const filtersActive = currency !== "all" || source !== "all" || from !== "" || to !== "";
+  const categories = [...new Set(rows.map((r) => r.category).filter((c): c is string => c !== null))].sort();
+  const filtersActive = currency !== "all" || category !== "all" || from !== "" || to !== "";
   const clearFilters = () => {
     setCurrency("all");
-    setSource("all");
+    setCategory("all");
     setFrom("");
     setTo("");
     setPage(0);
@@ -112,7 +111,7 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
       (r) =>
         (filter === "all" || r.type === filter) &&
         (currency === "all" || r.originalCurrency === currency) &&
-        (source === "all" || r.source === source) &&
+        (category === "all" || r.category === category) &&
         (!from || r.date >= from) &&
         (!to || r.date <= to) &&
         matches(r, query),
@@ -139,13 +138,20 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
       </button>
     );
   };
+  // Exactly what's on screen after filters and sort (all pages), built in the browser.
+  const exportCsv = () => {
+    const url = URL.createObjectURL(new Blob([toCsv(filtered)], { type: "text/csv;charset=utf-8" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: `transactions-${todayInIndia()}.csv` });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const ariaSort = (key: SortKey) => (sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
 
   const totalIn = filtered.filter((r) => r.type === "income").reduce((s, r) => s + r.amountInr, 0);
   const totalOut = filtered.filter((r) => r.type === "expense").reduce((s, r) => s + r.amountInr, 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="space-y-4 rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-center @3xl:justify-between">
           <div role="tablist" aria-label="Filter by type" className={segmentedTrack}>
@@ -162,16 +168,22 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
               </button>
             ))}
           </div>
-          <div className="relative w-full @3xl:max-w-xs">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input
-              type="search"
-              value={search}
-              onChange={(e) => update(setSearch)(e.target.value)}
-              placeholder="Search client or description"
-              aria-label="Search transactions"
-              className="pl-9"
-            />
+          <div className="flex w-full items-center gap-2 @3xl:max-w-sm">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Input
+                type="search"
+                value={search}
+                onChange={(e) => update(setSearch)(e.target.value)}
+                placeholder="Search"
+                aria-label="Search transactions"
+                className="pl-9"
+              />
+            </div>
+            <Button variant="outline" onClick={exportCsv} disabled={filtered.length === 0} aria-label={`Export CSV, ${filtered.length} transactions`}>
+              <Download aria-hidden />
+              <span className="hidden @md:inline">Export CSV</span>
+            </Button>
           </div>
         </div>
 
@@ -184,19 +196,19 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
             options={[{ value: "all", label: "All" }, { value: "INR", label: "INR" }, { value: "USD", label: "USD" }]}
           />
           <FilterSelect
-            id="filter-source"
-            label="Source"
-            value={source}
-            onChange={update(setSource)}
-            options={[{ value: "all", label: "All" }, ...sources.map((v) => ({ value: v, label: SOURCE_LABELS[v] ?? v }))]}
+            id="filter-category"
+            label="Category"
+            value={category}
+            onChange={update(setCategory)}
+            options={[{ value: "all", label: "All" }, ...categories.map((c) => ({ value: c, label: c }))]}
           />
-          <div className="col-span-2 flex flex-col gap-1.5">
-            <Label htmlFor="filter-from" className="text-caption text-muted-foreground">Date</Label>
-            <div className="flex items-center gap-2">
-              <Input id="filter-from" type="date" value={from} max={to || undefined} onChange={(e) => update(setFrom)(e.target.value)} aria-label="From date" className="w-full @3xl:w-40" />
-              <span className="text-caption text-muted-foreground">to</span>
-              <Input type="date" value={to} min={from || undefined} onChange={(e) => update(setTo)(e.target.value)} aria-label="To date" className="w-full @3xl:w-40" />
-            </div>
+          <div className="col-span-2 flex min-w-0 flex-col gap-1.5 @xs:col-span-1">
+            <Label htmlFor="filter-from" className="text-caption text-muted-foreground">From</Label>
+            <Input id="filter-from" type="date" value={from} max={to || undefined} onChange={(e) => update(setFrom)(e.target.value)} className="w-full px-2.5 @3xl:w-40 @3xl:px-3.5" />
+          </div>
+          <div className="col-span-2 flex min-w-0 flex-col gap-1.5 @xs:col-span-1">
+            <Label htmlFor="filter-to" className="text-caption text-muted-foreground">To</Label>
+            <Input id="filter-to" type="date" value={to} min={from || undefined} onChange={(e) => update(setTo)(e.target.value)} className="w-full px-2.5 @3xl:w-40 @3xl:px-3.5" />
           </div>
           {filtersActive ? (
             <Button variant="ghost" onClick={clearFilters} className="col-span-2 justify-self-start text-muted-foreground">
@@ -236,11 +248,11 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
                         <p className="text-foreground">{formatDate(row.date)}</p>
                         <p className="text-caption text-muted-foreground">{formatTime(row.time)}</p>
                       </td>
-                      <td className="w-full max-w-0 px-4 py-3.5">
+                      <td className="w-full max-w-0 py-3.5 pr-2 pl-4 @xl:px-4">
                         <div className="flex items-center gap-3">
                           <span
                             className={cn(
-                              "grid size-7 shrink-0 place-items-center rounded-full",
+                              "hidden size-7 shrink-0 place-items-center rounded-full @xl:grid",
                               isIncome ? "bg-success/10 text-success" : "bg-muted text-muted-foreground",
                             )}
                             aria-hidden
@@ -249,12 +261,9 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
                           </span>
                           <div className="min-w-0">
                             <p className="truncate font-medium text-foreground">{row.title}</p>
-                            <p className="text-caption text-muted-foreground @xl:truncate">
-                              <span className="@xl:hidden">{formatDate(row.date)} · {formatTime(row.time)}</span>
-                              <span className="hidden @xl:inline">
-                                {isIncome ? "Income" : "Expense"}
-                                {row.detail ? ` · ${row.detail}` : null}
-                              </span>
+                            <p className="hidden truncate text-caption text-muted-foreground @xl:block">
+                              {isIncome ? "Income" : "Expense"}
+                              {(isIncome ? row.detail : row.category) ? ` · ${isIncome ? row.detail : row.category}` : null}
                             </p>
                           </div>
                         </div>
@@ -264,19 +273,22 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
                           {SOURCE_LABELS[row.source] ?? row.source}
                         </span>
                       </td>
-                      <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      <td className="px-2 py-3.5 text-right whitespace-nowrap @xl:px-4">
                         <p className={cn("font-mono font-semibold tabular-nums", isIncome ? "text-success" : "text-foreground")}>
                           {isIncome ? "+" : "−"}
                           {formatINR(row.amountInr, { decimals: row.amountInr % 1 === 0 ? 0 : 2 })}
                         </p>
                         {row.originalCurrency === "USD" ? (
-                          <p className="text-caption text-muted-foreground tabular-nums">
+                          <p className="hidden text-caption text-muted-foreground tabular-nums @xl:block">
                             {usd.format(row.originalAmount)} @ ₹{row.exchangeRate}
                           </p>
                         ) : null}
                       </td>
                       <td className="px-2 py-3.5 whitespace-nowrap">
-                        <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon-sm" aria-label={`Details for ${row.title}, ${formatDate(row.date)}`} onClick={() => setViewing(row)} className="text-muted-foreground @xl:hidden">
+                          <Info aria-hidden />
+                        </Button>
+                        <div className="hidden justify-end gap-1 @xl:flex">
                           <Button variant="ghost" size="icon-sm" aria-label={`Edit ${row.title}, ${formatDate(row.date)}`} onClick={() => openForm(row)} className="text-muted-foreground">
                             <Pencil aria-hidden />
                           </Button>
@@ -345,6 +357,19 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
 
       <TransactionFormDialog open={formOpen} onOpenChange={setFormOpen} row={editing} />
       <DeleteTransactionDialog row={deleting} onOpenChange={(open) => !open && setDeleting(null)} />
+      <TransactionDetailsDialog
+        row={viewing}
+        sourceLabel={(source) => SOURCE_LABELS[source] ?? source}
+        onOpenChange={(open) => !open && setViewing(null)}
+        onEdit={(row) => {
+          setViewing(null);
+          openForm(row);
+        }}
+        onDelete={(row) => {
+          setViewing(null);
+          setDeleting(row);
+        }}
+      />
     </div>
   );
 }

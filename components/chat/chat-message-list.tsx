@@ -136,6 +136,7 @@ export function ChatMessageList({
                     {message.confirmation?.transaction && message.resolution !== "confirmed" && (
                       <TransactionSummaryCard
                         transaction={message.confirmation.transaction}
+                        duplicate={message.resolution ? undefined : message.confirmation.duplicate}
                         isCancelled={Boolean(message.resolution)}
                         discardedLabel={message.resolution === "replaced" ? "Replaced" : "Discarded"}
                         isPendingAction={isPendingAction}

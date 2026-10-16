@@ -72,6 +72,13 @@ export async function isActiveUser(userId: string): Promise<boolean> {
   return user?.isActive === true;
 }
 
+/** The env admin is always an admin; members are admins only while active with role "admin". */
+export async function isAdmin(userId: string): Promise<boolean> {
+  if (userId === "admin") return true;
+  const [user] = await db.select({ role: appUsers.role, isActive: appUsers.isActive }).from(appUsers).where(eq(appUsers.id, userId)).limit(1);
+  return user?.isActive === true && user.role === "admin";
+}
+
 export const SESSION_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",

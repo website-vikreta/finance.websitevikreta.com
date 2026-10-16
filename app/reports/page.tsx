@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { Download } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatTile } from "@/components/layout/stat-tile";
-import { buttonVariants } from "@/components/ui/button";
+import { ExportPdfButton } from "@/components/layout/export-pdf-button";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatINR, formatMonthShort, formatShare } from "@/lib/format";
-import { PERIODS, parsePeriod, periodStart, type Period } from "@/lib/transactions/period";
-import { expenseBreakdown, incomeBreakdown, monthlyTotals, type Breakdown } from "@/lib/transactions/queries";
+import { PERIODS, parsePeriod, periodStart, timeInIndia, todayInIndia, type Period } from "@/lib/transactions/period";
+import { expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals, type Breakdown } from "@/lib/transactions/queries";
+import { PrintReport } from "@/components/reports/print-report";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Reports" };
@@ -55,7 +55,9 @@ function BreakdownCard({ title, items, empty, barClass }: { title: string; items
 async function ReportData({ period }: { period: Period }) {
   await connection(); // periodStart reads the current date, so this runs at request time
   const from = periodStart(period);
-  const [income, expenses, months] = await Promise.all([incomeBreakdown(from), expenseBreakdown(from), monthlyTotals(12)]);
+  const [income, expenses, months, ledger] = await Promise.all([incomeBreakdown(from), expenseBreakdown(from), monthlyTotals(12), listLedger()]);
+  const today = todayInIndia();
+  const generatedAt = timeInIndia();
   const totalIn = income.reduce((s, i) => s + i.amount, 0);
   const totalOut = expenses.reduce((s, i) => s + i.amount, 0);
   const net = totalIn - totalOut;
@@ -63,7 +65,18 @@ async function ReportData({ period }: { period: Period }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-3">
+      <PrintReport
+        periodLabel={PERIODS[period]}
+        from={period === "all" ? null : from}
+        today={today}
+        generatedAt={generatedAt}
+        income={income}
+        expenses={expenses}
+        months={months}
+        rows={ledger.filter((r) => r.date >= from)}
+      />
+      <div className="space-y-6 print:hidden">
+      <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-3">
         <StatTile label="Income" value={formatINR(totalIn)} note={`${income.reduce((s, i) => s + i.count, 0)} payments`} />
         <StatTile label="Expenses" value={formatINR(totalOut)} note={`${expenses.reduce((s, i) => s + i.count, 0)} entries`} />
         <StatTile label="Net profit" value={formatINR(net)} note={margin} />
@@ -71,7 +84,7 @@ async function ReportData({ period }: { period: Period }) {
 
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
         <BreakdownCard title="Income by client" items={income} empty="No income recorded in this period." barClass="bg-income" />
-        <BreakdownCard title="Expenses by description" items={expenses} empty="No expenses recorded in this period." barClass="bg-expense" />
+        <BreakdownCard title="Expenses by category" items={expenses} empty="No expenses recorded in this period." barClass="bg-expense" />
       </div>
 
       <section className="overflow-hidden rounded-xl border border-border bg-card">
@@ -104,16 +117,19 @@ async function ReportData({ period }: { period: Period }) {
           </table>
         </div>
       </section>
+      </div>
     </>
   );
 }
 
 async function Report({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const period = parsePeriod((await searchParams).period);
+  await connection(); // "today" must be read per request, not frozen at build time
+  const today = todayInIndia();
 
   return (
     <>
-      <div className="flex flex-col gap-3 @xl:flex-row @xl:items-center @xl:justify-between">
+      <div className="flex flex-col gap-3 print:hidden @xl:flex-row @xl:items-center @xl:justify-between">
         <nav aria-label="Report period" className={segmentedTrack}>
           {(Object.keys(PERIODS) as Period[]).map((p) => (
             <Link
@@ -126,13 +142,7 @@ async function Report({ searchParams }: { searchParams: Promise<Record<string, s
             </Link>
           ))}
         </nav>
-        <a
-          href={`/api/reports/export?period=${period}`}
-          className={buttonVariants()}
-        >
-          <Download aria-hidden />
-          Export CSV
-        </a>
+        <ExportPdfButton fileName={`Finance report - ${PERIODS[period]} - ${today}`} />
       </div>
       <Suspense key={period} fallback={<ReportSkeleton />}>
         <ReportData period={period} />
@@ -144,7 +154,7 @@ async function Report({ searchParams }: { searchParams: Promise<Record<string, s
 function ReportSkeleton() {
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 @2xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-3">
         {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
       </div>
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-2">
@@ -158,7 +168,9 @@ function ReportSkeleton() {
 export default function ReportsPage({ searchParams }: PageProps<"/reports">) {
   return (
     <AppShell>
-      <PageHeader title="Reports" />
+      <div className="print:hidden">
+        <PageHeader title="Reports" />
+      </div>
       <Suspense fallback={<ReportSkeleton />}>
         <Report searchParams={searchParams} />
       </Suspense>

@@ -28,7 +28,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, isMobileOpen = fa
   return (
     <>
       {isMobileOpen ? <button type="button" aria-label="Close navigation" onClick={onCloseMobile} className="fixed inset-0 z-40 bg-foreground/40 lg:hidden" /> : null}
-      <aside className={cn("fixed top-16 bottom-0 z-50 flex flex-col border-r border-border bg-card transition-[width,left] duration-200 lg:static lg:z-auto", isMobileOpen ? "left-0 w-60" : "-left-60 lg:left-0", collapsed ? "lg:w-16" : "lg:w-60")}>
+      <aside className={cn("fixed top-16 bottom-0 z-50 flex flex-col print:hidden border-r border-border bg-card transition-[width,left] duration-200 lg:static lg:z-auto", isMobileOpen ? "left-0 w-60" : "-left-60 lg:left-0", collapsed ? "lg:w-16" : "lg:w-60")}>
         <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Main navigation">
           {navItems.map(({ label, href, icon: Icon }) => {
             const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));

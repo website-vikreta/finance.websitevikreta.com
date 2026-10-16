@@ -26,7 +26,7 @@ export function ClientsGrid({ clients }: { clients: ClientSummary[] }) {
   const visible = clients.filter((c) => c.name.toLowerCase().includes(query)).sort(SORTS[sort].compare);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 @2xl:flex-row @2xl:items-center @2xl:justify-between">
         <div className="relative w-full @2xl:max-w-sm">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -46,7 +46,7 @@ export function ClientsGrid({ clients }: { clients: ClientSummary[] }) {
           No clients match &ldquo;{search.trim()}&rdquo;.
         </p>
       ) : (
-          <ul className="grid grid-cols-1 gap-4 @2xl:grid-cols-2 @5xl:grid-cols-3">
+          <ul className="grid grid-cols-1 gap-6 @2xl:grid-cols-2 @5xl:grid-cols-3">
             {visible.map((c) => {
               const share = totalReceived > 0 ? (c.totalReceived / totalReceived) * 100 : 0;
               const shareLabel = formatShare(c.totalReceived, totalReceived);

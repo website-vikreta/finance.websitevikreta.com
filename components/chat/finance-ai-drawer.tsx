@@ -59,7 +59,7 @@ export function FinanceAIDrawer({ isOpen, onClose, panelWidth = 380 }: FinanceAI
       <aside
         aria-label="Finance Chat Bot Assistant"
         className={cn(
-          "flex flex-col border-border bg-card transition-[transform,opacity] duration-200 ease-in-out",
+          "flex flex-col border-border bg-card print:hidden transition-[transform,opacity] duration-200 ease-in-out",
           "fixed top-16 bottom-0 right-0 z-50 w-full sm:w-[400px] shadow-2xl",
           "xl:static xl:z-auto xl:h-full xl:min-h-0 xl:shrink-0 xl:shadow-none",
           isOpen

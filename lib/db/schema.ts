@@ -1,5 +1,6 @@
 import {
   pgTable,
+  serial,
   uuid,
   varchar,
   text,
@@ -21,7 +22,7 @@ export const appUsers = pgTable(
   {
     id: varchar("id", { length: 64 }).primaryKey(), // "admin" from existing session
     email: varchar("email", { length: 255 }).unique(), // Nullable; explicitly bootstrapped
-    role: varchar("role", { length: 50 }).notNull().default("manager"), // Always "manager"
+    role: varchar("role", { length: 50 }).notNull().default("manager"), // "admin" manages members; "manager" records money
     isActive: boolean("is_active").notNull().default(true),
     passwordHash: text("password_hash"), // scrypt "salt:hash"; NULL for the env-configured "admin"
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -51,6 +52,13 @@ export const clients = pgTable(
     check("chk_client_name_not_empty", sql`trim(${table.clientName}) <> ''`),
   ],
 ).enableRLS();
+
+// ─── 2b. CATEGORIES (Expense categories; list in lib/transactions/categories.ts) ─
+export const categories = pgTable("categories", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}).enableRLS();
 
 // ─── 3. TRANSACTION TYPES (Lookup: 1 = income, 2 = expense) ──────────────────
 export const transactionTypes = pgTable(
@@ -86,6 +94,7 @@ export const transactions = pgTable(
     rateSource: varchar("rate_source", { length: 50 }), // Nullable; 'manual' for USD
 
     description: text("description"),
+    categoryId: integer("category_id").references(() => categories.id), // Expenses only; NULL for income
     txnDate: date("txn_date").notNull(),
 
     source: varchar("source", { length: 50 }).notNull(), // "chatbot" | "manual" | "bank_import"
@@ -109,6 +118,7 @@ export const transactions = pgTable(
     index("idx_transactions_client_id").on(table.clientId),
     index("idx_transactions_deleted_at").on(table.deletedAt),
     index("idx_transactions_source").on(table.source),
+    index("idx_transactions_category_id").on(table.categoryId),
 
     check(
       "chk_transactions_amounts",
