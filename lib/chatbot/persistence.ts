@@ -12,7 +12,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { appUsers, chatSessions } from "@/lib/db/schema";
 import { requireAuth } from "@/lib/server-auth";
-import { exportChatState, importChatState, type ChatSessionState } from "./store";
+import { clearAll, exportChatState, importChatState, type ChatSessionState } from "./store";
 import type { ExtractionResult } from "./extract";
 
 export async function loadChatState(userId: string): Promise<void> {
@@ -39,6 +39,9 @@ export async function saveChatState(userId: string): Promise<void> {
   });
 }
 
+/** A draft nobody touched for this long is dropped, so a forgotten entry never merges into a new one. */
+const STALE_DRAFT_MS = 6 * 60 * 60 * 1000;
+
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
 /** Wraps a chat route handler with load-before / save-after of the user's chat state. */
@@ -53,6 +56,9 @@ export function withChatState(handler: Handler): Handler {
     } catch (err) {
       console.error("[chat-state] load failed; continuing with this instance's copy:", err);
     }
+
+    const last = exportChatState(userId).changedAt;
+    if (last > 0 && Date.now() - last > STALE_DRAFT_MS) clearAll(userId);
 
     const before = exportChatState(userId).changedAt;
     const response = await handler(req);
