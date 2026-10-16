@@ -1,13 +1,17 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { KPICard, type KPICardData } from "@/components/dashboard/kpi-card";
 import { BreakdownDonut } from "@/components/dashboard/breakdown-donut";
 import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 import { TrendChart } from "@/components/dashboard/trend-chart";
+import { UpcomingBills } from "@/components/dashboard/upcoming-bills";
 import { Skeleton } from "@/components/ui/skeleton";
 import { percentChange } from "@/lib/format";
 import { clientSummaries, expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals } from "@/lib/transactions/queries";
+import { listRecurring } from "@/lib/transactions/recurring";
+import { todayInIndia } from "@/lib/transactions/period";
 
 export const metadata = { title: "Dashboard" };
 
@@ -21,14 +25,16 @@ function change(current: number, previous: number, higherIsBetter: boolean): Pic
 }
 
 async function DashboardData() {
+  await connection(); // upcoming bills are relative to today
   const months = await monthlyTotals(MONTHS);
   const thisMonth = months[months.length - 1];
   const lastMonth = months[months.length - 2];
-  const [clients, paidThisMonth, spentThisMonth, recent] = await Promise.all([
+  const [clients, paidThisMonth, spentThisMonth, recent, bills] = await Promise.all([
     clientSummaries(),
     incomeBreakdown(thisMonth.month),
     expenseBreakdown(thisMonth.month),
     listLedger(5),
+    listRecurring(),
   ]);
 
   const month = new Date(`${thisMonth.month}T00:00:00Z`).toLocaleDateString("en-IN", { month: "long", timeZone: "UTC" });
@@ -59,7 +65,10 @@ async function DashboardData() {
         <div className="min-w-0 @4xl:col-span-4">
           <BreakdownDonut title={`Who paid us · ${month}`} items={paidThisMonth} empty="No income this month." />
         </div>
-        <div className="min-w-0 @4xl:col-span-8">
+        <div className="min-w-0 @4xl:col-span-4">
+          <UpcomingBills rows={bills} today={todayInIndia()} />
+        </div>
+        <div className="min-w-0 @4xl:col-span-4">
           <RecentTransactions rows={recent} />
         </div>
       </div>
@@ -79,7 +88,8 @@ function DashboardSkeleton() {
       </div>
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-12">
         <Skeleton className="h-80 rounded-xl @4xl:col-span-4" />
-        <Skeleton className="h-80 rounded-xl @4xl:col-span-8" />
+        <Skeleton className="h-80 rounded-xl @4xl:col-span-4" />
+        <Skeleton className="h-80 rounded-xl @4xl:col-span-4" />
       </div>
     </>
   );
