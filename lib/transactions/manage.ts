@@ -15,11 +15,14 @@ import {
   computeAmounts,
   computeCanonicalPayloadHash,
   confirmAndPersistTransaction,
+  linkClient,
   resolveCategoryId,
   resolveClientId,
+  type PersistConfirmationParams,
   type PersistError,
 } from "@/lib/transactions/persist";
 import { duplicateMessage, findDuplicate } from "@/lib/transactions/duplicates";
+import { redoPayment, undoPayment } from "@/lib/transactions/recurring";
 import { toCategory } from "@/lib/transactions/categories";
 
 export interface TransactionInput {
@@ -66,7 +69,7 @@ export function toDraft(raw: unknown): { ok: true; draft: ExtractionResult; rate
     type,
     original_amount: amount,
     original_currency: currency,
-    client_name: type === "income" ? text(input.client) : null,
+    client_name: text(input.client),
     expense_description: type === "expense" ? text(input.description) : null,
     txn_date: date,
     category: type === "expense" ? (toCategory(input.category) ?? "Other") : null,
@@ -94,6 +97,7 @@ export async function createManualTransaction(
   idempotencyKey: string,
   allowDuplicate = false,
   invoice?: { id: string; note: string },
+  onSaved?: PersistConfirmationParams["onSaved"],
 ): Promise<ManageResult> {
   const parsed = toDraft(raw);
   if (!parsed.ok) return parsed;
@@ -102,12 +106,20 @@ export async function createManualTransaction(
   const warning = allowDuplicate ? null : await duplicateWarning(draft, null);
   if (warning) return warning;
 
+  const rawInput = (raw ?? {}) as Partial<TransactionInput>;
+  const incomeNote =
+    invoice?.note ??
+    (typeof rawInput.description === "string" && rawInput.description.trim()
+      ? rawInput.description.trim().slice(0, MAX_TEXT)
+      : null);
+
   const result = await confirmAndPersistTransaction({
     userId,
     source: "manual",
     idempotencyKey: `manual-${idempotencyKey}`,
     invoiceId: invoice?.id,
-    incomeNote: invoice?.note,
+    incomeNote,
+    onSaved,
     draft,
     sessionState: {
       status: "READY_FOR_CONFIRMATION",
@@ -144,9 +156,18 @@ export async function updateTransaction(userId: string, id: string, raw: unknown
       if (!before) return { ok: false, error: "This transaction no longer exists." } as ManageResult;
 
       const typeId = draft.type === "income" ? 1 : 2;
-      const clientName = typeId === 1 ? (draft.client_name as string).trim() : null;
-      const clientId = clientName ? await resolveClientId(tx, clientName) : null;
-      const description = typeId === 2 ? (draft.expense_description as string).trim() : null;
+      // A bill payment's amount is part of the bill's history; change it by deleting and marking the bill paid again.
+      if (before.recurringId && (typeId !== before.typeId || draft.original_currency !== before.originalCurrency || Number(money.originalAmount) !== Number(before.originalAmount))) {
+        return { ok: false, error: "This paid a recurring bill. To change the amount, delete it and mark the bill paid again." } as ManageResult;
+      }
+      const { clientId, clientNameSnapshot } = await linkClient(tx, typeId, draft.client_name);
+      const rawInput = (raw ?? {}) as Partial<TransactionInput>;
+      const description =
+        typeId === 2
+          ? (draft.expense_description as string).trim()
+          : typeof rawInput.description === "string" && rawInput.description.trim()
+            ? rawInput.description.trim().slice(0, MAX_TEXT)
+            : null;
       const categoryId = typeId === 2 ? (await resolveCategoryId(tx, draft.category)).id : null;
 
       const [after] = await tx
@@ -154,7 +175,7 @@ export async function updateTransaction(userId: string, id: string, raw: unknown
         .set({
           typeId,
           clientId,
-          clientNameSnapshot: clientName,
+          clientNameSnapshot,
           originalAmount: money.originalAmount,
           originalCurrency: draft.original_currency as "INR" | "USD",
           amountInr: money.amountInr,
@@ -170,7 +191,7 @@ export async function updateTransaction(userId: string, id: string, raw: unknown
             originalCurrency: draft.original_currency as string,
             amountInr: money.amountInr,
             exchangeRate: money.exchangeRate,
-            clientName,
+            clientName: clientNameSnapshot,
             description,
             txnDate: draft.txn_date as string,
             createdBy: before.createdBy,
@@ -200,6 +221,11 @@ export async function updateTransaction(userId: string, id: string, raw: unknown
 export async function deleteTransaction(userId: string, id: string): Promise<ManageResult> {
   try {
     return await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(transactions).where(and(eq(transactions.id, id), isNull(transactions.deletedAt))).for("update");
+      if (!row) return { ok: false, error: "This transaction was already deleted." } as ManageResult;
+      const blocked = await undoPayment(tx, userId, row);
+      if (blocked) return { ok: false, error: blocked } as ManageResult;
+
       const [deleted] = await tx
         .update(transactions)
         .set({ deletedAt: new Date(), deletedBy: userId, updatedAt: new Date() })
@@ -229,6 +255,8 @@ export async function restoreTransaction(userId: string, id: string): Promise<Ma
     return await db.transaction(async (tx) => {
       const [row] = await tx.select().from(transactions).where(eq(transactions.id, id)).for("update");
       if (!row || row.deletedAt === null) return { ok: false, error: "This transaction isn't deleted." } as ManageResult;
+      const blocked = await redoPayment(tx, userId, row);
+      if (blocked) return { ok: false, error: blocked } as ManageResult;
 
       // The client may have been removed meanwhile; re-link income to an active client by name.
       const clientId = row.typeId === 1 && row.clientNameSnapshot ? await resolveClientId(tx, row.clientNameSnapshot) : row.clientId;

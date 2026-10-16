@@ -85,6 +85,41 @@
       "when": 1792135839442,
       "tag": "0011_invoice_seller",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792147800000,
+      "tag": "0012_recurring_end_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792150000000,
+      "tag": "0013_recurring_monthly_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792152000000,
+      "tag": "0014_transaction_recurring_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792154000000,
+      "tag": "0015_recurring_client",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792156000000,
+      "tag": "0016_drop_recurring_frequency",
+      "breakpoints": true
     }
   ]
 }

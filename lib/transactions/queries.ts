@@ -29,6 +29,10 @@ export interface LedgerRow {
   detail: string | null;
   /** Expense category name; null for income (and for expenses saved before categories existed). */
   category: string | null;
+  /** Client name if associated with a client (income or tagged expense). */
+  clientName?: string | null;
+  /** The recurring bill this expense paid, if any. */
+  bill?: { id: string; name: string } | null;
   originalAmount: number;
   originalCurrency: "INR" | "USD";
   amountInr: number;
@@ -46,7 +50,13 @@ export interface MonthTotals {
 export interface ClientSummary {
   id: string;
   name: string;
+  email: string | null;
+  gstin: string | null;
+  state: string | null;
+  country: string;
   totalReceived: number;
+  totalExpenses: number;
+  netMargin: number;
   payments: number;
   lastPaymentDate: string | null;
   firstSeen: string;
@@ -67,6 +77,7 @@ export interface DeletedRow extends LedgerRow {
   deletedAt: string;
 }
 
+// ponytail: loads every row and the ledger pages in the browser; move to server-side paging once there are thousands.
 export async function listLedger(limit?: number): Promise<LedgerRow[]> {
   return listRows(false, limit);
 }
@@ -95,6 +106,9 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
     type_id: number;
     title: string;
     detail: string | null;
+    client_name: string | null;
+    bill_id: string | null;
+    bill_name: string | null;
     category: string | null;
     original_amount: string;
     original_currency: "INR" | "USD";
@@ -111,12 +125,15 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
                 THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
                 ELSE coalesce(t.description, 'Expense') END AS title,
            CASE WHEN t.type_id = ${INCOME} THEN t.description END AS detail,
+           coalesce(c.client_name, t.client_name_snapshot) AS client_name,
            cat.name AS category,
+           t.recurring_id AS bill_id, r.description AS bill_name,
            t.original_amount, t.original_currency, t.amount_inr, t.exchange_rate, t.source,
            to_char(t.deleted_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS deleted_at
     FROM transactions t
     LEFT JOIN clients c ON c.client_id = t.client_id
     LEFT JOIN categories cat ON cat.id = t.category_id
+    LEFT JOIN recurring_expenses r ON r.id = t.recurring_id
     WHERE ${deleted ? RESTORABLE : sql`t.deleted_at IS NULL`}
     ORDER BY ${deleted ? sql`t.deleted_at DESC` : sql`t.txn_date DESC, t.created_at DESC`}
     ${limit ? sql`LIMIT ${limit}` : sql``}
@@ -130,6 +147,8 @@ async function listRows(deleted: boolean, limit?: number): Promise<LedgerRow[]> 
     title: r.title,
     detail: r.detail,
     category: r.category,
+    clientName: r.client_name,
+    bill: r.bill_id ? { id: r.bill_id, name: r.bill_name ?? "Bill" } : null,
     originalAmount: Number(r.original_amount),
     originalCurrency: r.original_currency,
     amountInr: Number(r.amount_inr),
@@ -166,32 +185,49 @@ export async function clientSummaries(): Promise<ClientSummary[]> {
   const data = await rows<{
     id: string;
     name: string;
+    email: string | null;
+    gstin: string | null;
+    state: string | null;
+    country: string;
     total: string;
+    expenses: string;
     payments: string;
     last_payment: string | null;
     first_seen: string;
   }>(sql`
     SELECT c.client_id AS id, c.client_name AS name,
-           coalesce(sum(t.amount_inr), 0) AS total,
-           count(t.id) AS payments,
-           to_char(max(t.txn_date), 'YYYY-MM-DD') AS last_payment,
+           c.email, c.gstin, c.state, c.country,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${INCOME}), 0) AS total,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${EXPENSE}), 0) AS expenses,
+           count(t.id) FILTER (WHERE t.type_id = ${INCOME}) AS payments,
+           to_char(max(t.txn_date) FILTER (WHERE t.type_id = ${INCOME}), 'YYYY-MM-DD') AS last_payment,
            to_char(c.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS first_seen
     FROM clients c
     LEFT JOIN transactions t
-      ON t.client_id = c.client_id AND t.deleted_at IS NULL AND t.type_id = ${INCOME}
+      ON t.client_id = c.client_id AND t.deleted_at IS NULL
     WHERE c.deleted_at IS NULL
     GROUP BY c.client_id
     ORDER BY total DESC, c.client_name
   `);
 
-  return data.map((r) => ({
-    id: r.id,
-    name: r.name,
-    totalReceived: Number(r.total),
-    payments: Number(r.payments),
-    lastPaymentDate: r.last_payment,
-    firstSeen: r.first_seen,
-  }));
+  return data.map((r) => {
+    const totalReceived = Number(r.total);
+    const totalExpenses = Number(r.expenses);
+    return {
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      gstin: r.gstin,
+      state: r.state,
+      country: r.country,
+      totalReceived,
+      totalExpenses,
+      netMargin: totalReceived - totalExpenses,
+      payments: Number(r.payments),
+      lastPaymentDate: r.last_payment,
+      firstSeen: r.first_seen,
+    };
+  });
 }
 
 /** Expenses grouped by category since `from` (YYYY-MM-DD), largest first. */

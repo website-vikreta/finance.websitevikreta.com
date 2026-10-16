@@ -67,7 +67,7 @@ export const categories = pgTable("categories", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }).enableRLS();
 
-// ─── 2c. RECURRING EXPENSES (bills that repeat; marked paid by a person, never automatically) ─
+// ─── 2c. RECURRING EXPENSES (bills that repeat monthly; marked paid by a person, never automatically) ─
 export const recurringExpenses = pgTable(
   "recurring_expenses",
   {
@@ -76,7 +76,6 @@ export const recurringExpenses = pgTable(
     categoryId: integer("category_id").notNull().references(() => categories.id),
     originalAmount: numeric("original_amount", { precision: 18, scale: 2 }).notNull(),
     originalCurrency: varchar("original_currency", { length: 3 }).notNull(), // "INR" | "USD"
-    frequency: varchar("frequency", { length: 10 }).notNull(), // "monthly" | "yearly"
     /** Day of month the bill falls on (1–31); short months clamp to their last day. */
     anchorDay: integer("anchor_day").notNull(),
     nextDue: date("next_due").notNull(),
@@ -86,13 +85,14 @@ export const recurringExpenses = pgTable(
     createdBy: varchar("created_by", { length: 64 }).notNull().references(() => appUsers.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    endDate: date("end_date"), // optional final due date after which recurring stops
+    clientId: uuid("client_id").references(() => clients.clientId), // its payments are tagged to this client
     deletedAt: timestamp("deleted_at", { withTimezone: true }), // stopped
   },
   (table) => [
     index("idx_recurring_next_due").on(table.nextDue),
     check("chk_recurring_amount", sql`${table.originalAmount} > 0`),
     check("chk_recurring_currency", sql`${table.originalCurrency} IN ('INR', 'USD')`),
-    check("chk_recurring_frequency", sql`${table.frequency} IN ('monthly', 'yearly')`),
     check("chk_recurring_anchor_day", sql`${table.anchorDay} BETWEEN 1 AND 31`),
   ],
 ).enableRLS();
@@ -133,6 +133,10 @@ export const transactions = pgTable(
     description: text("description"),
     categoryId: integer("category_id").references(() => categories.id), // Expenses only; NULL for income
     invoiceId: uuid("invoice_id").references((): AnyPgColumn => invoices.id), // Income that pays an invoice
+    /** Expense that paid a recurring bill: which bill, which month, and whether it settled that month. */
+    recurringId: uuid("recurring_id").references(() => recurringExpenses.id),
+    recurringDue: date("recurring_due"),
+    recurringSettled: boolean("recurring_settled"),
     txnDate: date("txn_date").notNull(),
 
     source: varchar("source", { length: 50 }).notNull(), // "chatbot" | "manual" | "bank_import"
@@ -158,6 +162,11 @@ export const transactions = pgTable(
     index("idx_transactions_source").on(table.source),
     index("idx_transactions_category_id").on(table.categoryId),
     index("idx_transactions_invoice_id").on(table.invoiceId),
+    index("idx_transactions_recurring_id").on(table.recurringId),
+    check(
+      "chk_transactions_recurring_link",
+      sql`(${table.recurringId} IS NULL) = (${table.recurringDue} IS NULL) AND (${table.recurringId} IS NULL) = (${table.recurringSettled} IS NULL)`,
+    ),
 
     check(
       "chk_transactions_amounts",

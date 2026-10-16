@@ -58,12 +58,16 @@ export function withChatState(handler: Handler): Handler {
     }
 
     const last = exportChatState(userId).changedAt;
-    if (last > 0 && Date.now() - last > STALE_DRAFT_MS) clearAll(userId);
+    let expired = false;
+    if (last > 0 && Date.now() - last > STALE_DRAFT_MS) {
+      clearAll(userId);
+      expired = true;
+    }
 
     const before = exportChatState(userId).changedAt;
     const response = await handler(req);
 
-    if (exportChatState(userId).changedAt !== before) {
+    if (expired || exportChatState(userId).changedAt !== before) {
       try {
         await saveChatState(userId);
       } catch (err) {

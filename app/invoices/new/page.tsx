@@ -9,8 +9,13 @@ import { listClientBilling } from "@/lib/invoices/invoices";
 
 export const metadata = { title: "New invoice" };
 
-async function Form() {
-  const [company, clients] = await Promise.all([getCompanyProfile(), listClientBilling()]);
+async function Form({ searchParams }: { searchParams?: Promise<{ client?: string }> }) {
+  const [company, clients, client] = await Promise.all([
+    getCompanyProfile(),
+    listClientBilling(),
+    searchParams ? searchParams.then((s) => s.client) : Promise.resolve(undefined),
+  ]);
+
   if (!company) {
     return (
       <p className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-body-sm">
@@ -18,15 +23,19 @@ async function Form() {
       </p>
     );
   }
-  return <InvoiceForm company={company} clients={clients} />;
+  return <InvoiceForm company={company} clients={clients} initialClient={client} />;
 }
 
-export default function NewInvoicePage() {
+export default function NewInvoicePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ client?: string }>;
+}) {
   return (
     <AppShell>
       <PageHeader title="New invoice" />
       <Suspense fallback={<Skeleton className="h-[40rem] rounded-xl" />}>
-        <Form />
+        <Form searchParams={searchParams} />
       </Suspense>
     </AppShell>
   );

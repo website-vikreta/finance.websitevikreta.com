@@ -40,23 +40,28 @@ interface InvoiceFormProps {
   clients: ClientBilling[];
   /** Edit this draft; omit to create a new one. */
   invoice?: InvoiceDetail | null;
+  initialClient?: string;
 }
 
-export function InvoiceForm({ company, clients, invoice }: InvoiceFormProps) {
+export function InvoiceForm({ company, clients, invoice, initialClient }: InvoiceFormProps) {
   const router = useRouter();
   const today = todayInIndia();
-  const [clientName, setClientName] = useState(invoice?.clientName ?? "");
-  const [email, setEmail] = useState(invoice?.billToEmail ?? "");
-  const [address, setAddress] = useState(invoice?.billToAddress ?? "");
-  const [country, setCountry] = useState(invoice?.billToCountry ?? "India");
-  const [state, setState] = useState<string | null>(invoice?.billToState ?? null);
-  const [gstin, setGstin] = useState(invoice?.billToGstin ?? "");
-  const [currency, setCurrency] = useState<InvoiceCurrency>(invoice?.currency ?? "INR");
+  const knownInit = initialClient ? clients.find((c) => c.name.toLowerCase() === initialClient.trim().toLowerCase()) : null;
+  const [clientName, setClientName] = useState(invoice?.clientName ?? knownInit?.name ?? initialClient ?? "");
+  const [email, setEmail] = useState(invoice?.billToEmail ?? knownInit?.email ?? "");
+  const [address, setAddress] = useState(invoice?.billToAddress ?? knownInit?.address ?? "");
+  const [country, setCountry] = useState(invoice?.billToCountry ?? knownInit?.country ?? "India");
+  const [state, setState] = useState<string | null>(invoice?.billToState ?? knownInit?.state ?? null);
+  const [gstin, setGstin] = useState(invoice?.billToGstin ?? knownInit?.gstin ?? "");
+  const [currency, setCurrency] = useState<InvoiceCurrency>(
+    invoice?.currency ?? (knownInit && knownInit.country.toLowerCase() !== "india" ? "USD" : "INR"),
+  );
   const [issueDate, setIssueDate] = useState(invoice?.issueDate ?? today);
   const [dueDate, setDueDate] = useState(invoice?.dueDate ?? addDays(today, 15));
   const [gstRate, setGstRate] = useState(invoice ? String(Number(invoice.gstRate)) : String(Number(company.defaultGstRate)));
   const [notes, setNotes] = useState(invoice?.notes ?? "");
   const [terms, setTerms] = useState(invoice?.terms ?? company.defaultTerms ?? "");
+
   const [lines, setLines] = useState<Line[]>(
     invoice?.items.length
       ? invoice.items.map((it, n) => ({ key: n, description: it.description, quantity: String(Number(it.quantity)), rate: String(Number(it.rate)) }))
