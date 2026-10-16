@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession, SESSION_COOKIE } from "@/lib/auth";
-import { isActiveUser } from "@/lib/credentials";
 
 /**
  * Proxy — Next.js 16 route guard (replaces middleware.ts).
- * Runs on the Node.js runtime before every matched request.
+ * Runs before every matched request. No database here: Netlify deploys the proxy as an Edge
+ * Function, which can't load `pg`. Whether a member is still active comes from
+ * /api/auth/session (Node), cached briefly per member.
  *
  * Rules:
  * - /login and /api/auth/* are public (no session required).
@@ -19,6 +20,24 @@ import { isActiveUser } from "@/lib/credentials";
  * gate, not the only gate.
  */
 
+// ponytail: per-isolate cache, so a removed member can keep access for up to ACTIVE_TTL_MS.
+const ACTIVE_TTL_MS = 60_000;
+const activeUntil = new Map<string, number>();
+
+/**
+ * Asks the Node route whether the cookie's member is still active (the Edge proxy can't query the DB).
+ * null = couldn't tell (network error): deny this request but keep the cookie, so a blip doesn't log people out.
+ */
+async function stillActive(req: NextRequest, userId: string): Promise<boolean | null> {
+  if (userId === "admin") return true; // the env admin can't be removed
+  if ((activeUntil.get(userId) ?? 0) > Date.now()) return true;
+  const res = await fetch(new URL("/api/auth/session", req.url), { headers: { cookie: req.headers.get("cookie") ?? "" }, cache: "no-store" }).catch(() => null);
+  if (!res || (res.status !== 204 && res.status !== 401)) return null;
+  if (res.status === 401) return false;
+  activeUntil.set(userId, Date.now() + ACTIVE_TTL_MS);
+  return true;
+}
+
 export async function proxy(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
@@ -29,7 +48,8 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const verified = token ? await verifySession(token) : null;
-  const session = verified && (await isActiveUser(verified.userId)) ? verified : null;
+  const active = verified ? await stillActive(req, verified.userId) : false;
+  const session = active ? verified : null;
 
   // If visiting /login:
   if (pathname === "/login") {
@@ -46,7 +66,7 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
   // Not authenticated -> redirect page requests to /login (401 JSON for /api/*)
   if (!session) {
     const res = unauthenticated(req);
-    if (token) {
+    if (token && active !== null) {
       res.cookies.delete(SESSION_COOKIE);
     }
     return res;
