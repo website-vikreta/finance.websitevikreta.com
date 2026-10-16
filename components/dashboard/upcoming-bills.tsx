@@ -34,7 +34,9 @@ export function UpcomingBills({ rows, today }: { rows: RecurringRow[]; today: st
             return (
               <li key={r.id} className="flex items-center gap-3 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-body-sm font-medium text-foreground">{r.description}</p>
+                  <Link href={`/transactions/recurring/${r.id}`} className="block max-w-full truncate text-body-sm font-medium text-foreground underline-offset-4 hover:underline">
+                    {r.description}
+                  </Link>
                   <p className={cn("text-caption", d.overdue ? "text-destructive" : "text-muted-foreground")}>{[leftText(r), d.text].filter(Boolean).join(" · ")}</p>
                 </div>
                 <p className="shrink-0 font-mono text-body-sm font-semibold tabular-nums">{money(r)}</p>
