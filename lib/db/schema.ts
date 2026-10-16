@@ -60,6 +60,36 @@ export const categories = pgTable("categories", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }).enableRLS();
 
+// ─── 2c. RECURRING EXPENSES (bills that repeat; marked paid by a person, never automatically) ─
+export const recurringExpenses = pgTable(
+  "recurring_expenses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    description: varchar("description", { length: 200 }).notNull(),
+    categoryId: integer("category_id").notNull().references(() => categories.id),
+    originalAmount: numeric("original_amount", { precision: 18, scale: 2 }).notNull(),
+    originalCurrency: varchar("original_currency", { length: 3 }).notNull(), // "INR" | "USD"
+    frequency: varchar("frequency", { length: 10 }).notNull(), // "monthly" | "yearly"
+    /** Day of month the bill falls on (1–31); short months clamp to their last day. */
+    anchorDay: integer("anchor_day").notNull(),
+    nextDue: date("next_due").notNull(),
+    /** Part payments made towards the occurrence due on next_due; resets when it moves on. */
+    paidThisPeriod: numeric("paid_this_period", { precision: 18, scale: 2 }).notNull().default("0"),
+    isActive: boolean("is_active").notNull().default(true), // false = paused
+    createdBy: varchar("created_by", { length: 64 }).notNull().references(() => appUsers.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }), // stopped
+  },
+  (table) => [
+    index("idx_recurring_next_due").on(table.nextDue),
+    check("chk_recurring_amount", sql`${table.originalAmount} > 0`),
+    check("chk_recurring_currency", sql`${table.originalCurrency} IN ('INR', 'USD')`),
+    check("chk_recurring_frequency", sql`${table.frequency} IN ('monthly', 'yearly')`),
+    check("chk_recurring_anchor_day", sql`${table.anchorDay} BETWEEN 1 AND 31`),
+  ],
+).enableRLS();
+
 // ─── 3. TRANSACTION TYPES (Lookup: 1 = income, 2 = expense) ──────────────────
 export const transactionTypes = pgTable(
   "transaction_types",
