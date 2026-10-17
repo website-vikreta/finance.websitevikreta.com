@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import {
   Area,
   AreaChart,
@@ -53,10 +53,21 @@ function TrendTooltip({ active, payload, label }: TooltipContentProps<TooltipVal
 }
 
 /** Income vs expenses per month. Receives 12 months; the range control slices the tail. */
-export function TrendChart({ data }: { data: MonthTotals[] }) {
-  const [range, setRange] = useState<(typeof RANGES)[number]>(6);
+export function TrendChart({ data, years, initialYear }: { data: MonthTotals[]; years: number[]; initialYear: number }) {
+  const [range, setRange] = useState<(typeof RANGES)[number]>(12);
   const [type, setType] = useState<ChartType>("bar");
-  const rows = data.slice(-range);
+  const [selectedYear, setSelectedYear] = useState(initialYear);
+  const [chartData, setChartData] = useState(data);
+
+  const handleYearChange = useCallback(async (year: number) => {
+    setSelectedYear(year);
+    if (year === initialYear) { setChartData(data); return; }
+    const res = await fetch(`/api/reports/monthly?year=${year}`);
+    const json = await res.json();
+    setChartData(json.months);
+  }, [initialYear, data]);
+
+  const rows = chartData.slice(-range);
   const isEmpty = rows.every((r) => r.income === 0 && r.expense === 0);
 
   const common = { data: rows, margin: { top: 8, right: 8, bottom: 0, left: 8 } };
@@ -83,7 +94,17 @@ export function TrendChart({ data }: { data: MonthTotals[] }) {
     <section className="h-full rounded-xl border border-border bg-card p-6" aria-labelledby="trend-title">
       <div className="flex flex-col gap-3 @2xl:flex-row @2xl:items-start @2xl:justify-between">
         <div>
-          <h2 id="trend-title" className="text-title-md">Income vs expenses</h2>
+          <div className="flex items-center gap-3">
+            <h2 id="trend-title" className="text-title-md">Income vs expenses</h2>
+            <select
+              id="trend-year-select"
+              value={selectedYear}
+              onChange={(e) => handleYearChange(Number(e.target.value))}
+              className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-caption font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {years.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
           <div className="mt-2 flex items-center gap-4 text-caption text-muted-foreground">
             {SERIES.map((s) => (
               <span key={s.key} className="flex items-center gap-2">

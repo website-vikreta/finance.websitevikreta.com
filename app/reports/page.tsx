@@ -7,9 +7,10 @@ import { StatTile } from "@/components/layout/stat-tile";
 import { ExportPdfButton } from "@/components/layout/export-pdf-button";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatINR, formatMonthShort, formatShare } from "@/lib/format";
+import { formatINR, formatShare } from "@/lib/format";
 import { PERIODS, parsePeriod, periodStart, timeInIndia, todayInIndia, type Period } from "@/lib/transactions/period";
-import { expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals, type Breakdown } from "@/lib/transactions/queries";
+import { expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals, transactionYears, monthlyTotalsForYear, type Breakdown } from "@/lib/transactions/queries";
+import { MonthlyTable } from "@/components/reports/monthly-table";
 import { PrintReport } from "@/components/reports/print-report";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +56,9 @@ function BreakdownCard({ title, items, empty, barClass }: { title: string; items
 async function ReportData({ period }: { period: Period }) {
   await connection(); // periodStart reads the current date, so this runs at request time
   const from = periodStart(period);
-  const [income, expenses, months, ledger] = await Promise.all([incomeBreakdown(from), expenseBreakdown(from), monthlyTotals(12), listLedger()]);
+  const years = await transactionYears();
+  const latestYear = years[0] ?? new Date().getFullYear();
+  const [income, expenses, months, yearMonths, ledger] = await Promise.all([incomeBreakdown(from), expenseBreakdown(from), monthlyTotals(12), monthlyTotalsForYear(latestYear), listLedger()]);
   const today = todayInIndia();
   const generatedAt = timeInIndia();
   const totalIn = income.reduce((s, i) => s + i.amount, 0);
@@ -87,36 +90,7 @@ async function ReportData({ period }: { period: Period }) {
         <BreakdownCard title="Expenses by category" items={expenses} empty="No expenses recorded in this period." barClass="bg-expense" />
       </div>
 
-      <section className="overflow-hidden rounded-xl border border-border bg-card">
-        <h2 className="border-b border-border px-6 py-4 text-title-md">Last 12 months</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[480px] text-body-sm">
-            <thead className="bg-muted/60">
-              <tr className="text-caption text-muted-foreground">
-                <th scope="col" className="px-6 py-3 text-left font-semibold">Month</th>
-                <th scope="col" className="px-6 py-3 text-right font-semibold">Income</th>
-                <th scope="col" className="px-6 py-3 text-right font-semibold">Expenses</th>
-                <th scope="col" className="px-6 py-3 text-right font-semibold">Net</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border font-mono tabular-nums">
-              {[...months].reverse().map((m) => {
-                const rowNet = m.income - m.expense;
-                return (
-                  <tr key={m.month}>
-                    <td className="px-6 py-3 font-sans text-foreground">
-                      {formatMonthShort(m.month)} {m.month.slice(0, 4)}
-                    </td>
-                    <td className="px-6 py-3 text-right">{formatINR(m.income)}</td>
-                    <td className="px-6 py-3 text-right">{formatINR(m.expense)}</td>
-                    <td className={cn("px-6 py-3 text-right", rowNet < 0 ? "text-destructive" : "text-foreground")}>{formatINR(rowNet)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <MonthlyTable data={yearMonths} years={years} initialYear={latestYear} />
       </div>
     </>
   );
