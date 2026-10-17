@@ -9,7 +9,7 @@ import { TrendChart } from "@/components/dashboard/trend-chart";
 import { UpcomingBills } from "@/components/dashboard/upcoming-bills";
 import { Skeleton } from "@/components/ui/skeleton";
 import { percentChange } from "@/lib/format";
-import { expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals } from "@/lib/transactions/queries";
+import { expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals, transactionYears, monthlyTotalsForYear } from "@/lib/transactions/queries";
 import { listRecurring } from "@/lib/transactions/recurring";
 import { receivables } from "@/lib/invoices/invoices";
 import { todayInIndia } from "@/lib/transactions/period";
@@ -27,9 +27,11 @@ function change(current: number, previous: number, higherIsBetter: boolean): Pic
 
 async function DashboardData() {
   await connection(); // upcoming bills are relative to today
-  const months = await monthlyTotals(MONTHS);
-  const thisMonth = months[months.length - 1];
-  const lastMonth = months[months.length - 2];
+  const years = await transactionYears();
+  const latestYear = years[0] ?? new Date().getFullYear();
+  const [kpiMonths, chartMonths] = await Promise.all([monthlyTotals(MONTHS), monthlyTotalsForYear(latestYear)]);
+  const thisMonth = kpiMonths[kpiMonths.length - 1];
+  const lastMonth = kpiMonths[kpiMonths.length - 2];
   const today = todayInIndia();
   const [owed, paidThisMonth, spentThisMonth, recent, bills] = await Promise.all([
     receivables(today),
@@ -63,7 +65,7 @@ async function DashboardData() {
       </div>
       <div className="grid grid-cols-1 items-stretch gap-6 @4xl:grid-cols-12">
         <div className="min-w-0 @4xl:col-span-8">
-          <TrendChart data={months} />
+          <TrendChart data={chartMonths} years={years} initialYear={latestYear} />
         </div>
         <div className="min-w-0 @4xl:col-span-4">
           <BreakdownDonut title={`Where money went · ${month}`} items={spentThisMonth} empty="No expenses this month." />

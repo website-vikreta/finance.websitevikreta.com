@@ -15,6 +15,7 @@ import { todayInIndia } from "@/lib/transactions/period";
 import { DeleteTransactionDialog } from "./delete-transaction-dialog";
 import { TransactionDetailsDialog } from "./transaction-details-dialog";
 import { TransactionFormDialog } from "./transaction-form-dialog";
+import { CATEGORIES } from "@/lib/transactions/categories";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -67,7 +68,13 @@ function pageList(current: number, count: number): (number | "gap")[] {
 }
 
 // ponytail: filters and pages in the browser over the full ledger; move to server-side paging once it reaches a few thousand rows
-export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
+export function LedgerTable({
+  rows,
+  categories,
+}: {
+  rows: LedgerRow[];
+  categories?: string[];
+}) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [currency, setCurrency] = useState("all");
@@ -92,7 +99,7 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
     set(v);
     setPage(0);
   };
-  const categories = [...new Set(rows.map((r) => r.category).filter((c): c is string => c !== null))].sort();
+  const categoryOptions = categories && categories.length > 0 ? categories : [...CATEGORIES];
   const filtersActive = currency !== "all" || category !== "all" || from !== "" || to !== "";
   const clearFilters = () => {
     setCurrency("all");
@@ -201,7 +208,7 @@ export function LedgerTable({ rows }: { rows: LedgerRow[] }) {
             label="Category"
             value={category}
             onChange={update(setCategory)}
-            options={[{ value: "all", label: "All" }, ...categories.map((c) => ({ value: c, label: c }))]}
+            options={[{ value: "all", label: "All" }, ...categoryOptions.map((c) => ({ value: c, label: c }))]}
           />
           <div className="col-span-2 flex min-w-0 flex-col gap-1.5 @xs:col-span-1">
             <Label htmlFor="filter-from" className="text-caption text-muted-foreground">From</Label>
