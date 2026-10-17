@@ -10,6 +10,7 @@
 
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { CATEGORIES } from "./categories";
 
 const INCOME = 1;
 const EXPENSE = 2;
@@ -257,6 +258,39 @@ export async function incomeBreakdown(from: string): Promise<Breakdown[]> {
   return data.map((r) => ({ name: r.name, amount: Number(r.amount), count: Number(r.count) }));
 }
 
+/** Distinct years (descending) that have at least one non-deleted transaction. */
+export async function transactionYears(): Promise<number[]> {
+  const data = await rows<{ year: string }>(sql`
+    SELECT DISTINCT extract(year FROM txn_date)::int AS year
+    FROM transactions
+    WHERE deleted_at IS NULL
+    ORDER BY year DESC
+  `);
+  return data.map((r) => Number(r.year));
+}
+
+/** Income/expense per month for all 12 months of `year`, oldest first, zero-filled. */
+export async function monthlyTotalsForYear(year: number): Promise<MonthTotals[]> {
+  const data = await rows<{ month: string; income: string; expense: string }>(sql`
+    WITH m AS (
+      SELECT generate_series(
+        make_date(${year}, 1, 1),
+        make_date(${year}, 12, 1),
+        interval '1 month'
+      )::date AS month
+    )
+    SELECT to_char(m.month, 'YYYY-MM-DD') AS month,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${INCOME}), 0) AS income,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${EXPENSE}), 0) AS expense
+    FROM m
+    LEFT JOIN transactions t
+      ON t.deleted_at IS NULL AND date_trunc('month', t.txn_date)::date = m.month
+    GROUP BY m.month
+    ORDER BY m.month
+  `);
+  return data.map((r) => ({ month: r.month, income: Number(r.income), expense: Number(r.expense) }));
+}
+
 export interface RangeSummary {
   income: number;
   expense: number;
@@ -299,3 +333,15 @@ export async function rangeSummary(from: string, to: string, search: string | nu
   }
   return summary;
 }
+
+/** All expense category names from database (or fallback to seeded categories). */
+export async function listCategories(): Promise<string[]> {
+  const data = await rows<{ name: string }>(sql`
+    SELECT name FROM categories ORDER BY id ASC
+  `);
+  if (data.length > 0) {
+    return data.map((r) => r.name);
+  }
+  return [...CATEGORIES];
+}
+

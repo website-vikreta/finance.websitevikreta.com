@@ -10,7 +10,7 @@ import { RecurringList } from "@/components/transactions/recurring-list";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { todayInIndia } from "@/lib/transactions/period";
-import { listDeleted, listLedger } from "@/lib/transactions/queries";
+import { listCategories, listDeleted, listLedger } from "@/lib/transactions/queries";
 import { listFinished, listRecurring } from "@/lib/transactions/recurring";
 
 export const metadata = { title: "Transactions" };
@@ -19,10 +19,10 @@ const VIEWS = { all: "All", recurring: "Recurring" } as const;
 type View = keyof typeof VIEWS;
 
 async function Ledger() {
-  const [rows, deleted] = await Promise.all([listLedger(), listDeleted()]);
+  const [rows, deleted, categories] = await Promise.all([listLedger(), listDeleted(), listCategories()]);
   return (
     <>
-      <LedgerTable rows={rows} />
+      <LedgerTable rows={rows} categories={categories} />
       <RecentlyDeleted rows={deleted} />
     </>
   );
