@@ -19,6 +19,8 @@ import { POST as validateHandler } from "../../../app/api/chatbot/validate/route
 import { GET as getMessageHandler, POST as postMessageHandler } from "../../../app/api/chatbot/message/route";
 import { POST as confirmHandler } from "../../../app/api/chatbot/confirm/route";
 import { POST as resetHandler } from "../../../app/api/chatbot/reset/route";
+import { db } from "../../db";
+import { appUsers } from "../../db/schema";
 
 // Setup environment for testing
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret-key-32-chars-long-abc-123";
@@ -53,6 +55,10 @@ async function createAuthHeaders(userId: string = "test-manager"): Promise<Heade
 
 async function runTests() {
   const userId = "test-manager-e2e";
+  await db
+    .insert(appUsers)
+    .values({ id: userId, role: "manager", isActive: true })
+    .onConflictDoNothing();
   const authHeaders = await createAuthHeaders(userId);
 
   // ───────────────────────────────────────────────────────────────────────────

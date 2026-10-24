@@ -352,8 +352,8 @@ export async function getClient(id: string): Promise<ClientDetail | null> {
       total: invoices.total,
       paid: sql<string>`coalesce((
         SELECT sum(t.original_amount) FROM transactions t
-        WHERE t.invoice_id = ${invoices.id} AND t.deleted_at IS NULL AND t.type_id = 1 AND t.original_currency = ${invoices.currency}
-      ), 0)::text`,
+        WHERE t.invoice_id = invoices.id AND t.deleted_at IS NULL AND t.type_id = 1 AND t.original_currency = invoices.currency
+      ), 0)::numeric(18,2)::text`,
     })
     .from(invoices)
     .where(and(eq(invoices.clientId, id), isNull(invoices.deletedAt)))

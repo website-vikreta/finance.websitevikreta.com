@@ -343,3 +343,188 @@ export const invoiceItems = pgTable(
     check("chk_invoice_items_positive", sql`${table.quantity} > 0 AND ${table.rate} >= 0`),
   ],
 ).enableRLS();
+
+// ─── 10. BANK STATEMENT IMPORT (staging only; not financial data) ────────────
+// These rows are reviewed before a confirmed transactions row is created.
+// Nothing here is joined into dashboard, report, client, invoice or export queries.
+
+export const bankAccounts = pgTable(
+  "bank_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    displayName: varchar("display_name", { length: 120 }).notNull(),
+    bankName: varchar("bank_name", { length: 120 }),
+    /** Last four digits only; full account numbers are never stored. */
+    accountLast4: varchar("account_last4", { length: 4 }),
+    currency: varchar("currency", { length: 3 }).notNull().default("INR"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: varchar("created_by", { length: 64 }).notNull().references(() => appUsers.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: varchar("deleted_by", { length: 64 }).references(() => appUsers.id),
+  },
+  (table) => [
+    uniqueIndex("uq_bank_accounts_normalized_active_name")
+      .on(sql`lower(trim(both from ${table.displayName}))`)
+      .where(sql`${table.deletedAt} IS NULL`),
+    index("idx_bank_accounts_active").on(table.isActive),
+    check("chk_bank_accounts_name_not_empty", sql`trim(${table.displayName}) <> ''`),
+    check("chk_bank_accounts_currency", sql`${table.currency} IN ('INR', 'USD')`),
+    check(
+      "chk_bank_accounts_last4",
+      sql`${table.accountLast4} IS NULL OR ${table.accountLast4} ~ '^[0-9]{4}$'`,
+    ),
+  ],
+).enableRLS();
+
+export const bankStatements = pgTable(
+  "bank_statements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    accountId: uuid("account_id").notNull().references(() => bankAccounts.id),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    fileSha256: varchar("file_sha256", { length: 64 }).notNull(),
+    fileSizeBytes: integer("file_size_bytes").notNull(),
+    pageCount: integer("page_count").notNull(),
+    statementFrom: date("statement_from"),
+    statementTo: date("statement_to"),
+    openingBalance: numeric("opening_balance", { precision: 18, scale: 2 }),
+    closingBalance: numeric("closing_balance", { precision: 18, scale: 2 }),
+    status: varchar("status", { length: 20 }).notNull().default("review"),
+    parserVersion: varchar("parser_version", { length: 20 }),
+    errorCode: varchar("error_code", { length: 50 }),
+    createdBy: varchar("created_by", { length: 64 }).notNull().references(() => appUsers.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_bank_statements_active_file_sha256")
+      .on(table.fileSha256)
+      .where(sql`${table.status} NOT IN ('failed', 'cancelled')`),
+    index("idx_bank_statements_status_created").on(table.status, table.createdAt),
+    index("idx_bank_statements_account_period").on(table.accountId, table.statementTo),
+    check("chk_bank_statements_file", sql`${table.fileSizeBytes} > 0 AND ${table.pageCount} > 0`),
+    check("chk_bank_statements_sha256", sql`${table.fileSha256} ~ '^[0-9a-f]{64}$'`),
+    check("chk_bank_statements_file_name", sql`trim(${table.fileName}) <> ''`),
+    check(
+      "chk_bank_statements_dates",
+      sql`${table.statementFrom} IS NULL OR ${table.statementTo} IS NULL OR ${table.statementFrom} <= ${table.statementTo}`,
+    ),
+    check(
+      "chk_bank_statements_status",
+      sql`${table.status} IN ('review', 'importing', 'completed', 'failed', 'cancelled')`,
+    ),
+  ],
+).enableRLS();
+
+export const bankStatementLines = pgTable(
+  "bank_statement_lines",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    statementId: uuid("statement_id").notNull().references(() => bankStatements.id),
+    pageNumber: integer("page_number").notNull(),
+    rowNumber: integer("row_number").notNull(),
+    /** Nullable so an unparseable date row survives review instead of being dropped. */
+    txnDate: date("txn_date"),
+    valueDate: date("value_date"),
+    /** Nullable so a blank/unparseable narration row survives review. */
+    narration: text("narration"),
+    reference: varchar("reference", { length: 120 }),
+    /** Business-friendly description generated from narration; editable in review. */
+    businessDescription: text("business_description"),
+    withdrawalAmount: numeric("withdrawal_amount", { precision: 18, scale: 2 }),
+    depositAmount: numeric("deposit_amount", { precision: 18, scale: 2 }),
+    closingBalance: numeric("closing_balance", { precision: 18, scale: 2 }),
+    direction: varchar("direction", { length: 10 }),
+    classification: varchar("classification", { length: 20 }).notNull().default("unclassified"),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    clientId: uuid("client_id").references(() => clients.clientId),
+    categoryId: integer("category_id").references(() => categories.id),
+    invoiceId: uuid("invoice_id").references(() => invoices.id),
+    transactionId: uuid("transaction_id").references(() => transactions.id),
+    importedPayloadHash: varchar("imported_payload_hash", { length: 64 }),
+    importedCategoryId: integer("imported_category_id").references(() => categories.id),
+    /** Starts at 0; bumped only when a consumed key must not be reused (explicit replace). */
+    importAttempt: integer("import_attempt").notNull().default(0),
+    fingerprint: varchar("fingerprint", { length: 64 }).notNull(),
+    flags: jsonb("flags").notNull().default(sql`'[]'::jsonb`),
+    errorCode: varchar("error_code", { length: 50 }),
+    skipReason: varchar("skip_reason", { length: 200 }),
+    reviewedBy: varchar("reviewed_by", { length: 64 }).references(() => appUsers.id),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    importedAt: timestamp("imported_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_bank_statement_lines_position").on(
+      table.statementId,
+      table.pageNumber,
+      table.rowNumber,
+    ),
+    uniqueIndex("uq_bank_statement_lines_transaction").on(table.transactionId),
+    index("idx_bank_statement_lines_statement_status").on(table.statementId, table.status),
+    index("idx_bank_statement_lines_fingerprint").on(table.fingerprint),
+    index("idx_bank_statement_lines_client").on(table.clientId),
+    index("idx_bank_statement_lines_invoice").on(table.invoiceId),
+    check(
+      "chk_bank_statement_lines_position",
+      sql`${table.pageNumber} > 0 AND ${table.rowNumber} > 0`,
+    ),
+    check(
+      "chk_bank_statement_lines_amounts",
+      sql`(${table.withdrawalAmount} IS NULL OR ${table.withdrawalAmount} > 0 OR (
+          ${table.status} = 'pending' AND (
+            (${table.withdrawalAmount} < 0 AND ${table.flags} @> '["NEGATIVE_AMOUNT"]'::jsonb)
+            OR (${table.withdrawalAmount} = 0 AND ${table.flags} @> '["ZERO_AMOUNT"]'::jsonb)
+          )
+        ))
+        AND (${table.depositAmount} IS NULL OR ${table.depositAmount} > 0 OR (
+          ${table.status} = 'pending' AND (
+            (${table.depositAmount} < 0 AND ${table.flags} @> '["NEGATIVE_AMOUNT"]'::jsonb)
+            OR (${table.depositAmount} = 0 AND ${table.flags} @> '["ZERO_AMOUNT"]'::jsonb)
+          )
+        ))`,
+    ),
+    check(
+      "chk_bank_statement_lines_direction",
+      sql`${table.direction} IS NULL OR ${table.direction} IN ('deposit', 'withdrawal')`,
+    ),
+    check(
+      "chk_bank_statement_lines_classification",
+      sql`${table.classification} IN ('unclassified', 'income', 'expense', 'transfer', 'refund', 'reversal', 'other', 'non_business')`,
+    ),
+    check(
+      "chk_bank_statement_lines_status",
+      sql`${table.status} IN ('pending', 'ready', 'imported', 'skipped', 'duplicate', 'error')`,
+    ),
+    check(
+      "chk_bank_statement_lines_ready",
+      sql`${table.status} <> 'ready'
+        OR (
+          ${table.txnDate} IS NOT NULL
+          AND ${table.narration} IS NOT NULL
+          AND trim(${table.narration}) <> ''
+          AND (${table.withdrawalAmount} IS NOT NULL) <> (${table.depositAmount} IS NOT NULL)
+          AND (${table.withdrawalAmount} IS NULL OR ${table.withdrawalAmount} > 0)
+          AND (${table.depositAmount} IS NULL OR ${table.depositAmount} > 0)
+        )`,
+    ),
+    check(
+      "chk_bank_statement_lines_imported",
+      sql`(
+          ${table.status} = 'imported'
+          AND ${table.transactionId} IS NOT NULL
+          AND ${table.importedAt} IS NOT NULL
+        )
+        OR (
+          ${table.status} <> 'imported'
+          AND ${table.transactionId} IS NULL
+        )`,
+    ),
+    check("chk_bank_statement_lines_fingerprint", sql`${table.fingerprint} ~ '^[0-9a-f]{64}$'`),
+    check("chk_bank_statement_lines_import_attempt", sql`${table.importAttempt} >= 0`),
+  ],
+).enableRLS();

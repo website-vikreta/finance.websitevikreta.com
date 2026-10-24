@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { todayInIndia } from "@/lib/transactions/period";
 import { listCategories, listDeleted, listLedger } from "@/lib/transactions/queries";
 import { listFinished, listRecurring } from "@/lib/transactions/recurring";
+import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Transactions" };
 
@@ -23,7 +24,9 @@ async function Ledger() {
   return (
     <>
       <LedgerTable rows={rows} categories={categories} />
-      <RecentlyDeleted rows={deleted} />
+      <div className="print:hidden">
+        <RecentlyDeleted rows={deleted} />
+      </div>
     </>
   );
 }
@@ -38,7 +41,7 @@ async function Body({ searchParams }: { searchParams: Promise<Record<string, str
   const view: View = (await searchParams).view === "recurring" ? "recurring" : "all";
   return (
     <>
-      <nav aria-label="Transactions view" className={segmentedTrack}>
+      <nav aria-label="Transactions view" className={cn(segmentedTrack, "print:hidden")}>
         {(Object.keys(VIEWS) as View[]).map((v) => (
           <Link key={v} href={v === "all" ? "/transactions" : `/transactions?view=${v}`} aria-current={v === view ? "page" : undefined} className={segmentedItem(v === view)}>
             {VIEWS[v]}
@@ -64,7 +67,9 @@ function ListSkeleton() {
 export default function TransactionsPage({ searchParams }: PageProps<"/transactions">) {
   return (
     <AppShell>
-      <PageHeader title="Transactions" action={<NewTransactionButton />} />
+      <div className="print:hidden">
+        <PageHeader title="Transactions" action={<NewTransactionButton />} />
+      </div>
       <Suspense fallback={<ListSkeleton />}>
         <Body searchParams={searchParams} />
       </Suspense>

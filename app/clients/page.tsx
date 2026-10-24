@@ -21,7 +21,7 @@ async function ClientsData() {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-6 @xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 @xl:grid-cols-3 print:hidden">
         <StatTile label="Clients" value={String(clients.length)} />
         <StatTile label="Total received" value={formatINR(totalReceived)} />
         <StatTile label="Payments" value={String(payments)} />
@@ -47,10 +47,12 @@ async function ClientsData() {
 export default function ClientsPage() {
   return (
     <AppShell>
-      <PageHeader
-        title="Clients"
-        action={<AddClientButton />}
-      />
+      <div className="print:hidden">
+        <PageHeader
+          title="Clients"
+          action={<AddClientButton />}
+        />
+      </div>
       <Suspense
         fallback={
           <>

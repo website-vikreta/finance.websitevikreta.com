@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Download, Search } from "lucide-react";
+import { ChevronRight, Download, FileDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
 import type { ClientSummary } from "@/lib/transactions/queries";
 import type { Owed } from "@/lib/invoices/invoices";
 import { toClientsCsv } from "@/lib/clients/csv";
-import { todayInIndia } from "@/lib/transactions/period";
+import { timeInIndia, todayInIndia } from "@/lib/transactions/period";
+import { PrintClients } from "./print-clients";
 
 type Filter = "all" | "owed";
 
@@ -93,8 +94,26 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
     URL.revokeObjectURL(url);
   };
 
+  const exportPdf = () => {
+    const title = document.title;
+    document.title = `Clients report - ${todayInIndia()}`;
+    window.print();
+    document.title = title;
+  };
+
   return (
     <div className="space-y-6">
+      <PrintClients
+        clients={visible}
+        owed={owed}
+        filter={filter}
+        sort={sort}
+        sortLabel={SORTS[sort].label}
+        search={search}
+        today={todayInIndia()}
+        generatedAt={timeInIndia()}
+      />
+      <div className="space-y-6 print:hidden">
       <div className="space-y-4 rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-center @3xl:justify-between">
           <div role="tablist" aria-label="Filter clients" className={cn(segmentedTrack, "max-w-full overflow-x-auto")}>
@@ -139,6 +158,16 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
             >
               <Download className="size-4" aria-hidden />
               <span className="hidden @md:inline">Export CSV</span>
+            </Button>
+            <Button
+              variant="default"
+              onClick={exportPdf}
+              disabled={visible.length === 0}
+              aria-label={`Export PDF, ${visible.length} clients`}
+              className="shrink-0"
+            >
+              <FileDown className="size-4" aria-hidden />
+              <span className="hidden @md:inline">Export PDF</span>
             </Button>
           </div>
         </div>
@@ -194,7 +223,7 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h2 className="truncate text-title-sm group-hover:underline">{c.name}</h2>
-                          {c.totalExpenses > 0 && c.totalReceived > 0 ? (
+                          {c.totalReceived > 0 ? (
                             <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-caption font-medium text-muted-foreground">
                               {Math.round((c.netMargin / c.totalReceived) * 100)}% margin
                             </span>
@@ -261,6 +290,7 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
           })}
         </ul>
       )}
+      </div>
     </div>
   );
 }

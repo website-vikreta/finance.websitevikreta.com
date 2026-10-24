@@ -6,17 +6,37 @@ import { cn } from "@/lib/utils";
 import type { MonthTotals } from "@/lib/transactions/queries";
 
 /** Reports monthly table with a dynamic year dropdown. */
-export function MonthlyTable({ data, years, initialYear }: { data: MonthTotals[]; years: number[]; initialYear: number }) {
-  const [selectedYear, setSelectedYear] = useState(initialYear);
-  const [tableData, setTableData] = useState(data);
+export function MonthlyTable({
+  data,
+  years,
+  initialYear,
+  selectedYear: controlledYear,
+  onYearChange,
+}: {
+  data: MonthTotals[];
+  years: number[];
+  initialYear: number;
+  selectedYear?: number;
+  onYearChange?: (year: number, months: MonthTotals[]) => void;
+}) {
+  const [internalYear, setInternalYear] = useState(initialYear);
+  const [internalData, setInternalData] = useState(data);
+
+  const selectedYear = controlledYear ?? internalYear;
+  const tableData = controlledYear !== undefined ? data : internalData;
 
   const handleYearChange = useCallback(async (year: number) => {
-    setSelectedYear(year);
-    if (year === initialYear) { setTableData(data); return; }
+    if (controlledYear === undefined) setInternalYear(year);
+    if (year === initialYear) {
+      if (controlledYear === undefined) setInternalData(data);
+      onYearChange?.(year, data);
+      return;
+    }
     const res = await fetch(`/api/reports/monthly?year=${year}`);
     const json = await res.json();
-    setTableData(json.months);
-  }, [initialYear, data]);
+    if (controlledYear === undefined) setInternalData(json.months);
+    onYearChange?.(year, json.months);
+  }, [initialYear, data, controlledYear, onYearChange]);
 
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card">
