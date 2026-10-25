@@ -4,6 +4,15 @@
 
 ## Current Task
 
+2026-10-25: Permanent client deletion moved to `feature/bank-statement` for combined testing with bank-import.
+- `permanentlyDeleteClient` in `lib/clients/clients.ts`: atomic hard-delete of client + transactions/invoices/recurring bills in one PG transaction; bank-import staging rows retained (client link removed, links to deleted txns/invoices severed & marked skipped); minimal audit event recorded.
+- Strong confirmation requires exact client name; counts recomputed server-side; no guard blocking deletion due to linked records.
+- `app/clients/actions.ts`: `deleteClientAction(id, confirmationName)` + `clientDeletionPreviewAction(id)`.
+- UI: `ClientDeleteDialog` (name confirmation, counts, retain/disclose policy), delete icon per client card (clients-grid + client-actions), `router.refresh()` after commit.
+- DB test: `lib/clients/__tests__/permanent-deletion-db.test.ts` (12 scenarios, gated on TEST_DATABASE_URL).
+- Verified: ESLint 0 errors on changed files; tsc clean for my files (pre-existing Uint8Array/BlobPart error in lib/bank-import/__tests__/business-description-e2e_db.ts unrelated). `next build` type-check blocked by that pre-existing error only.
+- No disposable PostgreSQL available locally; DB tests skip without TEST_DATABASE_URL.
+
 2026-10-24: Fix bank-statement income client creation when a matching client exists.
 - The bank-import helper limited an unfiltered client lookup to one row, then compared only that row. When another active client came first, an existing name was missed and the normalized-name unique index produced the generic failure.
 - The helper now searches by collapsed, case-insensitive active client name in SQL and reuses the matching client ID. The UI distinguishes reuse from creation and tells the reviewer to save the row to persist the link. Added disposable DB regression coverage for a later match and extra whitespace.

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Download, FileDown, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Delete, Download, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
@@ -11,8 +12,8 @@ import { cn } from "@/lib/utils";
 import type { ClientSummary } from "@/lib/transactions/queries";
 import type { Owed } from "@/lib/invoices/invoices";
 import { toClientsCsv } from "@/lib/clients/csv";
-import { timeInIndia, todayInIndia } from "@/lib/transactions/period";
-import { PrintClients } from "./print-clients";
+import { todayInIndia } from "@/lib/transactions/period";
+import { ClientDeleteDialog } from "./client-delete-dialog";
 
 type Filter = "all" | "owed";
 
@@ -49,9 +50,12 @@ const owedText = (o: Owed) =>
   [o.INR > 0 ? formatINR(o.INR) : null, o.USD > 0 ? `$${o.USD.toLocaleString("en-US")}` : null].filter(Boolean).join(" + ");
 
 export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed: Record<string, Owed> }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("received");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<{ id: string; name: string } | null>(null);
 
   const totalReceived = clients.reduce((s, c) => s + c.totalReceived, 0);
   const query = search.trim().toLowerCase();
@@ -94,26 +98,8 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
     URL.revokeObjectURL(url);
   };
 
-  const exportPdf = () => {
-    const title = document.title;
-    document.title = `Clients report - ${todayInIndia()}`;
-    window.print();
-    document.title = title;
-  };
-
   return (
     <div className="space-y-6">
-      <PrintClients
-        clients={visible}
-        owed={owed}
-        filter={filter}
-        sort={sort}
-        sortLabel={SORTS[sort].label}
-        search={search}
-        today={todayInIndia()}
-        generatedAt={timeInIndia()}
-      />
-      <div className="space-y-6 print:hidden">
       <div className="space-y-4 rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-center @3xl:justify-between">
           <div role="tablist" aria-label="Filter clients" className={cn(segmentedTrack, "max-w-full overflow-x-auto")}>
@@ -159,16 +145,6 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
               <Download className="size-4" aria-hidden />
               <span className="hidden @md:inline">Export CSV</span>
             </Button>
-            <Button
-              variant="default"
-              onClick={exportPdf}
-              disabled={visible.length === 0}
-              aria-label={`Export PDF, ${visible.length} clients`}
-              className="shrink-0"
-            >
-              <FileDown className="size-4" aria-hidden />
-              <span className="hidden @md:inline">Export PDF</span>
-            </Button>
           </div>
         </div>
 
@@ -207,7 +183,7 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
             const hasOwed = clientOwed && (clientOwed.INR > 0 || clientOwed.USD > 0);
 
             return (
-              <li key={c.id} className="h-full">
+              <li key={c.id} className="h-full relative">
                 <Link
                   href={`/clients/${c.id}`}
                   className="group flex h-full flex-col rounded-xl border border-border bg-card p-5 transition-[border-color,box-shadow] hover:border-foreground/30 hover:shadow-xs focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -223,7 +199,7 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h2 className="truncate text-title-sm group-hover:underline">{c.name}</h2>
-                          {c.totalReceived > 0 ? (
+                          {c.totalExpenses > 0 && c.totalReceived > 0 ? (
                             <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-caption font-medium text-muted-foreground">
                               {Math.round((c.netMargin / c.totalReceived) * 100)}% margin
                             </span>
@@ -285,12 +261,37 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
                     <p className="mt-1.5 text-caption text-muted-foreground">{shareLabel} of all income</p>
                   </div>
                 </Link>
+                {/* Delete icon stays outside the wrapping Link so clicking it never navigates. */}
+                <div className="absolute top-2 right-2 z-10">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setClientToDelete({ id: c.id, name: c.name });
+                      setDeleteOpen(true);
+                    }}
+                    title="Permanently delete client"
+                    aria-label="Permanently delete client"
+                  >
+                    <Delete className="size-3.5" aria-hidden />
+                  </Button>
+                </div>
               </li>
             );
           })}
         </ul>
       )}
-      </div>
+
+      <ClientDeleteDialog
+        client={clientToDelete}
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (!open) setClientToDelete(null);
+        }}
+        onDeleted={() => router.refresh()}
+      />
     </div>
   );
 }
