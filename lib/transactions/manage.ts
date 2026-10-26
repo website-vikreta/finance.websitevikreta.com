@@ -218,7 +218,12 @@ export async function updateTransaction(userId: string, id: string, raw: unknown
   }
 }
 
-export async function deleteTransaction(userId: string, id: string): Promise<ManageResult> {
+export async function deleteTransaction(
+  userId: string,
+  id: string,
+  /** Audit source of the deletion. Defaults to "manual"; bank imports pass "bank_import". */
+  source: "manual" | "bank_import" = "manual",
+): Promise<ManageResult> {
   try {
     return await db.transaction(async (tx) => {
       const [row] = await tx.select().from(transactions).where(and(eq(transactions.id, id), isNull(transactions.deletedAt))).for("update");
@@ -238,7 +243,7 @@ export async function deleteTransaction(userId: string, id: string): Promise<Man
         entityId: id,
         action: "deleted",
         performedBy: userId,
-        source: "manual",
+        source,
         beforeState: { deleted_at: null },
         afterState: { deleted_at: deleted.deletedAt },
       });

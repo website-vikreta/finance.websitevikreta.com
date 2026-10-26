@@ -9,7 +9,16 @@
 
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { auditEvents, categories, clients, invoices, recurringExpenses, transactions } from "@/lib/db/schema";
+import {
+  auditEvents,
+  bankStatementLines,
+  categories,
+  clients,
+  invoiceItems,
+  invoices,
+  recurringExpenses,
+  transactions,
+} from "@/lib/db/schema";
 import { balanceOf, displayStatus, STATES, type DisplayStatus } from "@/lib/invoices/math";
 import { todayInIndia } from "@/lib/transactions/period";
 
@@ -243,7 +252,108 @@ export async function updateClient(userId: string, id: string, raw: unknown): Pr
   });
 }
 
-export async function deleteClient(userId: string, id: string): Promise<Result> {
+/**
+ * Authoritative server-side count of everything the permanent deletion will touch.
+ * Always recomputed on the server; the browser is never trusted for these numbers.
+ */
+export interface ClientDeletionScope {
+  clientId: string;
+  clientName: string;
+  /** Transactions directly tagged to this client (income + expense). */
+  transactions: number;
+  /** Invoices issued to this client (invoice items cascade with them). */
+  invoices: number;
+  /** Invoice items belonging to the invoices above. */
+  invoiceItems: number;
+  /** Recurring bills tagged to this client. */
+  recurringExpenses: number;
+  /** Bank-import staging rows that keep their source data but lose the client link. */
+  bankStatementLines: number;
+}
+
+/** Reads dependency counts inside a transaction (Drizzle typed API). */
+async function loadDeletionCounts(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  id: string,
+): Promise<ClientDeletionScope> {
+  const [client] = await tx
+    .select({ id: clients.clientId, name: clients.clientName })
+    .from(clients)
+    .where(and(eq(clients.clientId, id), isNull(clients.deletedAt)))
+    .limit(1);
+  if (!client) {
+    throw new Error("This client no longer exists.");
+  }
+
+  const transactionsCount = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(transactions)
+    .where(and(eq(transactions.clientId, id), isNull(transactions.deletedAt)));
+  const invoicesCount = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(invoices)
+    .where(and(eq(invoices.clientId, id), isNull(invoices.deletedAt)));
+  const invoiceItemsCount = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(invoiceItems)
+    .innerJoin(invoices, eq(invoices.id, invoiceItems.invoiceId))
+    .where(and(eq(invoices.clientId, id), isNull(invoices.deletedAt)));
+  const recurringCount = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(recurringExpenses)
+    .where(and(eq(recurringExpenses.clientId, id), isNull(recurringExpenses.deletedAt)));
+  const bankLinesCount = await tx
+    .select({ count: sql<number>`count(*)` })
+    .from(bankStatementLines)
+    .where(eq(bankStatementLines.clientId, id));
+
+  const num = (r: { count: unknown }[]) => Number(r[0]?.count ?? 0);
+
+  return {
+    clientId: client.id,
+    clientName: client.name,
+    transactions: num(transactionsCount),
+    invoices: num(invoicesCount),
+    invoiceItems: num(invoiceItemsCount),
+    recurringExpenses: num(recurringCount),
+    bankStatementLines: num(bankLinesCount),
+  };
+}
+
+/**
+ * Authoritative preview of what permanent deletion would remove, for the confirmation dialog.
+ * Returns null when the client does not exist or is already gone.
+ */
+export async function clientDeletionScope(id: string): Promise<ClientDeletionScope | null> {
+  try {
+    return await db.transaction((tx) => loadDeletionCounts(tx, id));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Permanently deletes one client and its client-specific dependent business records.
+ *
+ * Atomicity: one PostgreSQL transaction. All dependent rows are removed or unlinked,
+ * then the client master record is hard-deleted, then a minimal audit event is recorded.
+ * On any failure the whole transaction rolls back and nothing is visible.
+ *
+ * Dependency handling:
+ *   - transactions        -> hard-deleted (never soft-deleted, not restorable)
+ *   - invoices            -> hard-deleted; invoice items cascade via FK onDelete cascade
+ *   - recurring_expenses  -> hard-deleted (surviving transactions referencing them are unlinked first)
+ *   - bank_statement_lines -> RETAINED (source provenance); client link removed; links to
+ *                             deleted transactions/invoices severed and marked skipped so they
+ *                             cannot be silently re-imported or recreate the removed transaction
+ *   - audit_events        -> RETAINED (immutable); one minimal deletion event is added
+ *   - app_users, categories, bank_statements, unrelated rows -> untouched
+ */
+export async function permanentlyDeleteClient(
+  userId: string,
+  id: string,
+  confirmationName: string,
+): Promise<Result> {
   return db.transaction(async (tx) => {
     const [client] = await tx
       .select()
@@ -255,47 +365,103 @@ export async function deleteClient(userId: string, id: string): Promise<Result> 
       return { ok: false, error: "This client no longer exists." };
     }
 
-    // Safety check: Cannot delete a client with existing transactions or active invoices
-    const [{ txnCount }] = await tx
-      .select({ txnCount: sql<number>`count(*)` })
-      .from(transactions)
-      .where(and(eq(transactions.clientId, id), isNull(transactions.deletedAt)));
-
-    if (Number(txnCount) > 0) {
+    // Strong confirmation: the manager must type the exact client name.
+    if (typeof confirmationName !== "string" || confirmationName.trim() !== client.clientName) {
       return {
         ok: false,
-        error: `Cannot delete ${client.clientName}: ${txnCount} transaction(s) are linked to them.`,
+        error: `Type the exact client name "${client.clientName}" to confirm permanent deletion.`,
       };
     }
 
-    const [{ invCount }] = await tx
-      .select({ invCount: sql<number>`count(*)` })
-      .from(invoices)
-      .where(and(eq(invoices.clientId, id), isNull(invoices.deletedAt), sql`${invoices.status} <> 'void'`));
+    // Recalculate dependency counts on the server; never trust the browser.
+    const scope = await loadDeletionCounts(tx, id);
 
-    if (Number(invCount) > 0) {
-      return {
-        ok: false,
-        error: `Cannot delete ${client.clientName}: they have ${invCount} active invoice(s).`,
-      };
-    }
-
+    // ─── 0. Bank-import staging rows: retain source records, remove the client link ───
+    // Original narration, amounts, references and statement lineage stay intact for
+    // reconciliation; only this client's relationship is removed.
     await tx
-      .update(clients)
+      .update(bankStatementLines)
+      .set({ clientId: null, updatedAt: new Date() })
+      .where(eq(bankStatementLines.clientId, id));
+    // Sever staging rows that point to this client's imported transactions so the FK does not
+    // block hard-deleting those transactions; mark them skipped so they cannot be silently
+    // re-imported or recreate the removed transaction on a later retry.
+    await tx
+      .update(bankStatementLines)
       .set({
-        deletedAt: new Date(),
-        deletedBy: userId,
+        transactionId: null,
+        importedAt: null,
+        importedPayloadHash: null,
+        importedCategoryId: null,
+        status: "skipped",
+        skipReason:
+          "Client permanently deleted; its imported transaction was removed.",
         updatedAt: new Date(),
       })
-      .where(eq(clients.clientId, id));
+      .where(
+        sql`${bankStatementLines.transactionId} IN (SELECT id FROM transactions WHERE client_id = ${id})`,
+      );
+    // Sever staging rows that point to this client's invoices being deleted.
+    await tx
+      .update(bankStatementLines)
+      .set({ invoiceId: null, updatedAt: new Date() })
+      .where(
+        sql`${bankStatementLines.invoiceId} IN (SELECT id FROM invoices WHERE client_id = ${id})`,
+      );
 
+    // ─── 1. Unlink this client's recurring bills from other clients' transactions ───
+    // (the client's own transactions are hard-deleted in the next step).
+    await tx
+      .update(transactions)
+      .set({
+        recurringId: null,
+        recurringDue: null,
+        recurringSettled: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          sql`${transactions.recurringId} IN (SELECT id FROM recurring_expenses WHERE client_id = ${id})`,
+          sql`${transactions.clientId} IS DISTINCT FROM ${id}`,
+          isNull(transactions.deletedAt),
+        ),
+      );
+
+    // ─── 2. Hard-delete the client's transactions (never soft-deleted, not restorable) ───
+    await tx.delete(transactions).where(eq(transactions.clientId, id));
+
+    // ─── 3. Hard-delete the client's recurring bills ───
+    await tx.delete(recurringExpenses).where(eq(recurringExpenses.clientId, id));
+
+    // ─── 4. Hard-delete the client's invoices; invoice items cascade via FK onDelete cascade ───
+    await tx.delete(invoices).where(eq(invoices.clientId, id));
+
+    // ─── 5. Hard-delete the client master record ───
+    const [deleted] = await tx
+      .delete(clients)
+      .where(eq(clients.clientId, id))
+      .returning({ id: clients.clientId });
+    if (!deleted) {
+      return { ok: false, error: "This client no longer exists." };
+    }
+
+    // ─── 6. Minimal deletion audit event (client id only; no personal data copied in) ───
     await tx.insert(auditEvents).values({
       entityType: "client",
       entityId: id,
-      action: "deleted",
+      action: "permanently_deleted",
       performedBy: userId,
       source: "manual",
-      beforeState: { name: client.clientName },
+      beforeState: { id: client.clientId },
+      metadata: {
+        deletedRecords: {
+          transactions: scope.transactions,
+          invoices: scope.invoices,
+          invoiceItems: scope.invoiceItems,
+          recurringExpenses: scope.recurringExpenses,
+        },
+        bankStatementLinesUnlinked: scope.bankStatementLines,
+      },
     });
 
     return { ok: true, id };

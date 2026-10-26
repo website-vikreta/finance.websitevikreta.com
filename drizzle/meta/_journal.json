@@ -120,6 +120,27 @@
       "when": 1792156000000,
       "tag": "0016_drop_recurring_frequency",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792693771861,
+      "tag": "0017_bank_statement_import",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792783105518,
+      "tag": "0018_bank_flagged_source_amounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792824672832,
+      "tag": "0019_bank_line_business_description",
+      "breakpoints": true
     }
   ]
 }

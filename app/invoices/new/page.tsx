@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { InvoiceForm } from "@/components/invoices/invoice-form";
@@ -33,7 +34,16 @@ export default function NewInvoicePage({
 }) {
   return (
     <AppShell>
-      <PageHeader title="New invoice" />
+      <div className="space-y-2">
+        <Link
+          href="/invoices"
+          className="inline-flex items-center gap-1.5 text-caption text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-3.5" aria-hidden />
+          Invoices
+        </Link>
+        <PageHeader title="New invoice" />
+      </div>
       <Suspense fallback={<Skeleton className="h-[40rem] rounded-xl" />}>
         <Form searchParams={searchParams} />
       </Suspense>
