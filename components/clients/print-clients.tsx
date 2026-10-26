@@ -1,16 +1,17 @@
-import { formatDate, formatINR, formatTime } from "@/lib/format";
+import { formatDate, formatINR, formatTime, owedText } from "@/lib/format";
 import type { ClientSummary } from "@/lib/transactions/queries";
 import type { Owed } from "@/lib/invoices/invoices";
 import { PrintSection, PrintTable } from "@/components/layout/print-table";
 
 interface PrintClientsProps {
+  /** Exactly what's on screen after search and filter. */
   clients: ClientSummary[];
-  owed: Record<string, Owed | { INR: number; USD: number; overdue?: number }>;
+  owed: Record<string, Owed>;
   filter: "all" | "owed";
-  sort?: string;
   sortLabel: string;
   search: string;
   today: string;
+  /** HH:MM, India time. */
   generatedAt: string;
 }
 
@@ -18,15 +19,7 @@ interface PrintClientsProps {
  * Clients → Export PDF. A clean, styled document rendered only in print;
  * on-screen filters, search, tabs, and client cards are hidden.
  */
-export function PrintClients({
-  clients,
-  owed,
-  filter,
-  sortLabel,
-  search,
-  today,
-  generatedAt,
-}: PrintClientsProps) {
+export function PrintClients({ clients, owed, filter, sortLabel, search, today, generatedAt }: PrintClientsProps) {
   const totalReceived = clients.reduce((s, c) => s + c.totalReceived, 0);
   const totalExpenses = clients.reduce((s, c) => s + c.totalExpenses, 0);
   const netMargin = totalReceived - totalExpenses;
@@ -36,7 +29,7 @@ export function PrintClients({
 
   const badges: string[] = [];
   if (filter === "owed") badges.push("Owes money");
-  if (search) badges.push(`Search: "${search}"`);
+  if (search) badges.push(`Search: "${search.trim()}"`);
   badges.push(`Sorted by: ${sortLabel}`);
 
   return (
@@ -61,11 +54,11 @@ export function PrintClients({
             { key: "clients", cells: ["Matching clients", `${clients.length} clients`, ""] },
             {
               key: "received",
-              cells: ["Total received", `${clients.reduce((s, c) => s + c.payments, 0)} payments`, formatINR(totalReceived)],
+              cells: ["Received", `${clients.reduce((s, c) => s + c.payments, 0)} payments`, formatINR(totalReceived)],
             },
-            { key: "expenses", cells: ["Direct expenses", "", formatINR(totalExpenses)] },
+            { key: "costs", cells: ["Direct costs", "", formatINR(totalExpenses)] },
             {
-              key: "margin",
+              key: "net",
               cells: ["Net profit", totalReceived > 0 ? `${((netMargin / totalReceived) * 100).toFixed(1)}% margin` : "", signed(netMargin)],
               strong: true,
               negative: netMargin < 0,
@@ -80,17 +73,14 @@ export function PrintClients({
 
       <PrintSection title={`Clients (${clients.length})`} breakable>
         {clients.length === 0 ? (
-          <p className="text-caption text-muted-foreground">No clients match the selected criteria.</p>
+          <p className="text-caption text-muted-foreground">No clients match the current filters.</p>
         ) : (
           <PrintTable
-            head={["Client Name", "Location", "Total Received", "Expenses", "Net Profit", "Owed", "Payments", "Last Payment"]}
+            head={["Client", "Location", "Received", "Direct costs", "Net profit", "Owes", "Payments", "Last payment"]}
             align={["left", "left", "right", "right", "right", "right", "right", "left"]}
             rows={clients.map((c) => {
-              const o = owed[c.id];
-              const owedParts = [];
-              if (o?.INR && o.INR > 0) owedParts.push(formatINR(o.INR));
-              if (o?.USD && o.USD > 0) owedParts.push(`$${o.USD.toFixed(2)}`);
-              const owedStr = owedParts.length > 0 ? owedParts.join(" + ") : "₹0";
+              const clientOwed = owed[c.id];
+              const hasOwed = clientOwed && (clientOwed.INR > 0 || clientOwed.USD > 0);
               const loc = [c.state, c.country].filter(Boolean).join(", ");
               return {
                 key: c.id,
@@ -100,11 +90,10 @@ export function PrintClients({
                   formatINR(c.totalReceived),
                   formatINR(c.totalExpenses),
                   signed(c.netMargin),
-                  owedStr,
+                  hasOwed ? owedText(clientOwed) : "₹0",
                   String(c.payments),
-                  c.lastPaymentDate ? formatDate(c.lastPaymentDate) : "None",
+                  c.lastPaymentDate ? formatDate(c.lastPaymentDate) : "None yet",
                 ],
-                negative: c.netMargin < 0,
               };
             })}
           />

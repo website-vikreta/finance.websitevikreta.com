@@ -6,14 +6,16 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Delete, Download, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ExportPdfButton } from "@/components/layout/export-pdf-button";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
-import { formatDate, formatINR, formatShare } from "@/lib/format";
+import { formatDate, formatINR, formatShare, owedText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ClientSummary } from "@/lib/transactions/queries";
 import type { Owed } from "@/lib/invoices/invoices";
 import { toClientsCsv } from "@/lib/clients/csv";
-import { todayInIndia } from "@/lib/transactions/period";
+import { todayInIndia, timeInIndia } from "@/lib/transactions/period";
 import { ClientDeleteDialog } from "./client-delete-dialog";
+import { PrintClients } from "./print-clients";
 
 type Filter = "all" | "owed";
 
@@ -44,10 +46,6 @@ const SORTS = {
 } as const;
 
 type Sort = keyof typeof SORTS;
-
-/** "₹50,000 + $1,200" for what a client still owes on invoices. */
-const owedText = (o: Owed) =>
-  [o.INR > 0 ? formatINR(o.INR) : null, o.USD > 0 ? `$${o.USD.toLocaleString("en-US")}` : null].filter(Boolean).join(" + ");
 
 export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed: Record<string, Owed> }) {
   const router = useRouter();
@@ -100,7 +98,16 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
 
   return (
     <div className="space-y-6">
-      <div className="space-y-4 rounded-xl border border-border bg-card p-4">
+      <PrintClients
+        clients={visible}
+        owed={owed}
+        filter={filter}
+        sortLabel={SORTS[sort].label}
+        search={search}
+        today={todayInIndia()}
+        generatedAt={timeInIndia()}
+      />
+      <div className="space-y-4 rounded-xl border border-border bg-card p-4 print:hidden">
         <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-center @3xl:justify-between">
           <div role="tablist" aria-label="Filter clients" className={cn(segmentedTrack, "max-w-full overflow-x-auto")}>
             <button
@@ -145,6 +152,10 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
               <Download className="size-4" aria-hidden />
               <span className="hidden @md:inline">Export CSV</span>
             </Button>
+            <ExportPdfButton
+              fileName={`Clients report - ${todayInIndia()}`}
+              disabled={visible.length === 0}
+            />
           </div>
         </div>
 
@@ -167,7 +178,7 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
       </div>
 
       {visible.length === 0 ? (
-        <p className="rounded-xl border border-border bg-card px-6 py-10 text-center text-body-sm text-muted-foreground">
+        <p className="rounded-xl border border-border bg-card px-6 py-10 text-center text-body-sm text-muted-foreground print:hidden">
           {search.trim()
             ? `No clients match "${search.trim()}".`
             : filter === "owed"
@@ -175,7 +186,7 @@ export function ClientsGrid({ clients, owed }: { clients: ClientSummary[]; owed:
               : "No clients yet."}
         </p>
       ) : (
-        <ul className="grid grid-cols-1 items-stretch gap-6 @2xl:grid-cols-2 @5xl:grid-cols-3">
+        <ul className="grid grid-cols-1 items-stretch gap-6 @2xl:grid-cols-2 @5xl:grid-cols-3 print:hidden">
           {visible.map((c) => {
             const share = totalReceived > 0 ? (c.totalReceived / totalReceived) * 100 : 0;
             const shareLabel = formatShare(c.totalReceived, totalReceived);
