@@ -87,10 +87,12 @@ async function main() {
 
   const limits = bankImportLimits();
   const bytes = makeTextPdf(STATEMENT_LINES);
+  // TS 5.9 strictness: Uint8Array<ArrayBufferLike> isn't accepted as BlobPart in test code.
+  const pdf = new Blob([bytes as BlobPart], { type: "application/pdf" });
 
   // 1) Real upload form path
   const form = new FormData();
-  form.set("file", new File([bytes], "e2e-synthetic-statement.pdf", { type: "application/pdf" }));
+  form.set("file", new File([pdf], "e2e-synthetic-statement.pdf", { type: "application/pdf" }));
   const input = await parseUploadForm(form, limits.maxBytes);
   assert.ok(input.ok, `form parsing failed: ${input.ok ? "" : input.error}`);
   if (!input.ok) throw new Error("unreachable");
