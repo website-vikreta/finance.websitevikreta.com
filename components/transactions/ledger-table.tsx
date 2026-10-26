@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, Download, Info, Pencil, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight, Download, FileDown, Info, Pencil, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,8 @@ import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { formatDate, formatINR, formatTime } from "@/lib/format";
 import type { LedgerRow } from "@/lib/transactions/queries";
 import { SOURCE_LABELS, toCsv } from "@/lib/transactions/csv";
-import { todayInIndia } from "@/lib/transactions/period";
+import { timeInIndia, todayInIndia } from "@/lib/transactions/period";
+import { PrintTransactions } from "./print-transactions";
 import { DeleteTransactionDialog } from "./delete-transaction-dialog";
 import { TransactionDetailsDialog } from "./transaction-details-dialog";
 import { TransactionFormDialog } from "./transaction-form-dialog";
@@ -153,6 +154,12 @@ export function LedgerTable({
     a.click();
     URL.revokeObjectURL(url);
   };
+  const exportPdf = () => {
+    const title = document.title;
+    document.title = `Transactions report - ${todayInIndia()}`;
+    window.print();
+    document.title = title;
+  };
   const ariaSort = (key: SortKey) => (sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
 
   const totalIn = filtered.filter((r) => r.type === "income").reduce((s, r) => s + r.amountInr, 0);
@@ -160,6 +167,20 @@ export function LedgerTable({
 
   return (
     <div className="space-y-6">
+      <PrintTransactions
+        filtered={filtered}
+        filter={filter}
+        currency={currency}
+        category={category}
+        from={from}
+        to={to}
+        search={query}
+        today={todayInIndia()}
+        generatedAt={timeInIndia()}
+        totalIn={totalIn}
+        totalOut={totalOut}
+      />
+      <div className="space-y-6 print:hidden">
       <div className="space-y-4 rounded-xl border border-border bg-card p-4">
         <div className="flex flex-col gap-3 @3xl:flex-row @3xl:items-center @3xl:justify-between">
           <div role="tablist" aria-label="Filter by type" className={segmentedTrack}>
@@ -176,7 +197,7 @@ export function LedgerTable({
               </button>
             ))}
           </div>
-          <div className="flex w-full items-center gap-2 @3xl:max-w-sm">
+          <div className="flex w-full items-center gap-2 @3xl:max-w-xl">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
               <Input
@@ -191,6 +212,10 @@ export function LedgerTable({
             <Button variant="outline" onClick={exportCsv} disabled={filtered.length === 0} aria-label={`Export CSV, ${filtered.length} transactions`}>
               <Download aria-hidden />
               <span className="hidden @md:inline">Export CSV</span>
+            </Button>
+            <Button variant="default" onClick={exportPdf} disabled={filtered.length === 0} aria-label={`Export PDF, ${filtered.length} transactions`}>
+              <FileDown aria-hidden />
+              <span className="hidden @md:inline">Export PDF</span>
             </Button>
           </div>
         </div>
@@ -369,6 +394,7 @@ export function LedgerTable({
             </Select>
           </div>
         </div>
+      </div>
       </div>
 
       <TransactionFormDialog open={formOpen} onOpenChange={setFormOpen} row={editing} />

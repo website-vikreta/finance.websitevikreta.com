@@ -103,7 +103,12 @@ function unauthenticated(req: NextRequest): NextResponse {
 export const config = {
   // Public assets must bypass auth. The Next image optimizer fetches the source
   // image internally, so redirecting `/brand/*.png` here makes optimized images fail.
+  // `/_next/hmr` is the dev-only Hot Module Replacement WebSocket. The proxy must
+  // not sit in that upgrade path: routing it through the guard corrupts the
+  // handshake for browsers (bare "Unauthorized" bytes instead of HTTP 101), the
+  // dev client keeps retrying, and after repeated failures it force-reloads the
+  // page — which made every screen refresh endlessly during development.
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico)$).*)",
+    "/((?!_next/static|_next/image|_next/hmr|_next/webpack-hmr|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico)$).*)",
   ],
 };

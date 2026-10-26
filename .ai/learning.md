@@ -198,3 +198,56 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 - Rule: `TrendChart` (income vs expenses, 3/6/12M + Bars/Lines/Area, crosshair tooltip), `BreakdownDonut` (top 5 + Other, falls back to share bars under 3 parts, legend with ₹ and %), `RecentTransactions` (last 5). Data stays server-side; charts are thin client components receiving rows.
 - Why: Dashboard should answer "how much in, where it went, who paid" without leaving the page. Palette validated with the dataviz checker; see design-system.md → Chart colors.
 - Date: 2026-10-15
+
+### [Data] — Proxy must never guard the dev HMR WebSocket
+- Rule: `proxy.ts` matcher excludes `_next/hmr` (and `_next/webpack-hmr`); `next.config.ts` lists every host the app may be browsed with in `allowedDevOrigins` (`localhost`, `127.0.0.1`, LAN IP). Never route `/_next/hmr` through the auth guard.
+- Where: `proxy.ts` (matcher), `next.config.ts`
+- Why: Next 16 blocked the HMR WebSocket for unlisted origins with a bare `Unauthorized` 12-byte response (no HTTP status line). Chrome reads that as `ERR_INVALID_HTTP_RESPONSE`; the dev client retries every ~5s and force-reloads the page after repeated failures, so every screen refreshed endlessly in dev. First seen 2026-10-23; caused ~2 weeks of "page keeps refreshing" without a server-side error anywhere.
+- Date: 2026-10-23
+
+### [Data] — Bank direction comes from source amount columns
+- Rule: Map debit/withdrawal and credit/deposit only from their labeled source columns. Closing balance is stored separately and used only for statement reconciliation. When empty cells collapse or column alignment is uncertain, retain the row as pending with `COLUMN_COUNT_MISMATCH` / `UNKNOWN_DIRECTION`; never move a balance into an amount field or infer a side from balance changes. Preserve a negative source sign as a blocking `NEGATIVE_AMOUNT` review issue. Ambiguous numeric dates remain pending unless the statement format resolves them.
+- Where: `lib/bank-import/parse.ts`, `lib/bank-import/validate.ts`
+- Why: Source-faithful staging must not use balance arithmetic or positional guesses to make importable amounts.
+- Date: 2026-10-23
+
+### [Component] — Never nest interactive controls inside a `<Link>`
+- Rule: A delete/secondary action button must sit OUTSIDE the card's wrapping link. `stopPropagation()` does not stop anchor navigation (that is default behavior, not bubbling), so a button inside `<Link>` "works" its own click into a page navigation — the dialog never opens. Card pattern: `<article><Link>descriptive block only</Link><div>badge, icon buttons, metadata</div></article>`. Keep dialogs fully controlled (`open={state === id}`, mounted per card), never `open={true}` behind a conditional mount.
+- Where: `components/bank-import/statement-list.tsx`
+- Why: The Upload-history trash icon on /bank-connections silently navigated to the statement detail page instead of opening the delete confirm dialog, so deletion appeared broken.
+- Date: 2026-10-23
+
+### [Data] — Deleting a bank statement also undoes its imported transactions
+- Rule: `deleteStatementAction` first soft-deletes every imported transaction via `deleteTransaction(userId, txId, "bank_import")` (moved to "Recently deleted", restorable, audit `source: bank_import`); an "already deleted" result is fine, a blocked one (recurring-bill payment, e.g. "A later payment ... depends on this one") aborts with that reason BEFORE any staging row is touched. Then staging lines + statement are hard-deleted in one DB transaction with an audit event whose `afterState` records `importedTransactionsDeleted`. The action ends with `refresh()` like its sibling actions. Never re-block statement deletion on `importedCount > 0`.
+- Why: The old action refused deletion for statements with imports ("must remain for auditability") and never revalidated, so the delete icon looked dead and the financial rows stayed; the user explicitly wants delete to undo the transactions it imported.
+- Date: 2026-10-23
+
+### [Data] — Read unruled bank PDFs from printed column geometry
+- Rule: When a PDF has no drawn table borders, use PDF.js text coordinates and the printed column headers to build seven source fields. Preserve empty columns; assign right-aligned withdrawal, deposit and closing-balance values from their source x bands. Attach only no-date, no-amount continuation text to the previous dated row. Incomplete rows remain pending, and signed negative values stay signed in their source column. The staging DB permits negative or zero source amounts only when they are pending with the matching blocking flag; ready rows require a positive amount.
+- Where: `lib/bank-import/pdf.ts`, `lib/bank-import/parse.ts`, `lib/bank-import/validate.ts`, `lib/db/schema.ts`
+- Why: Text-only tab splitting shifted blank leading cells and counted amount-bearing continuation fragments as extra transactions; coordinate mapping retained the statement's actual layout.
+- Date: 2026-10-24
+
+### [Copy] — Bank upload save failures use one safe message
+- Rule: Unexpected upload endpoint failures return the same plain message the upload form uses when it cannot read a response: "The statement could not be saved. Try again." Keep validation, authorization and duplicate errors specific.
+- Where: `app/api/bank-connections/upload/route.ts`, `components/bank-import/add-statement-form.tsx`, `lib/bank-import/upload-errors.ts`
+- Why: The upload flow must show a useful message for both API 500 responses and network/invalid-response failures without exposing parser or database details.
+- Date: 2026-10-24
+
+### [Data] - HDFC footer text is statement furniture
+- Rule: Match HDFC footer markers after removing non-alphanumeric characters. Strip a recognized footer suffix from a dated row's narration, then ignore the rest of that page through the next table header. Never classify footer text as transaction content.
+- Where: `lib/bank-import/parse.ts`
+- Why: PDF extraction may remove spaces and append the final page disclaimer to the last transaction, which can create a false `AMBIGUOUS_ENTRY`.
+- Date: 2026-10-24
+
+### [Copy] - Review-save errors name a stale amount constraint
+- Rule: When a review update hits SQLSTATE `23514` on `chk_bank_statement_lines_amounts`, tell the manager an admin must update bank import before saving the flagged amount. Log only the SQLSTATE and allowlisted constraint.
+- Where: `lib/bank-import/review.ts`, `lib/bank-import/safe-log.ts`
+- Why: Migration 0018 is required for edits to pending rows with negative or zero source amounts; a generic retry message hid the missing database update.
+- Date: 2026-10-24
+
+### [Data] - Bank-import client creation resolves an existing name before inserting
+- Rule: Match active clients in SQL using collapsed whitespace and case-insensitive comparison before inserting. Never apply `LIMIT 1` to an unfiltered client list and compare only that arbitrary row; the normalized-name unique index must not turn reuse of an existing client into a generic creation error. Return whether the client was created or reused, and tell reviewers to save the row after selection to persist its link.
+- Where: `lib/bank-import/review.ts`
+- Why: An existing client could be visible in `/clients` and the picker while bank-import creation failed because the lookup examined a different client first.
+- Date: 2026-10-24

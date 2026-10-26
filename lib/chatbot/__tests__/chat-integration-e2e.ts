@@ -24,6 +24,8 @@ import { setDraft, getDraft, setSession, getSession, clearAll } from "../store";
 import { GET as getMessageHandler, POST as postMessageHandler } from "../../../app/api/chatbot/message/route";
 import { POST as confirmHandler } from "../../../app/api/chatbot/confirm/route";
 import { POST as resetHandler } from "../../../app/api/chatbot/reset/route";
+import { db } from "../../db";
+import { appUsers } from "../../db/schema";
 import { validateExtraction } from "../validate";
 import { buildConfirmation, parseExchangeRate } from "../confirm";
 
@@ -59,6 +61,10 @@ async function createAuthHeaders(userId: string = "test-manager-frontend"): Prom
 
 async function runAllTests() {
   const userId = "qa-integration-user";
+  await db
+    .insert(appUsers)
+    .values({ id: userId, role: "manager", isActive: true })
+    .onConflictDoNothing();
   const authHeaders = await createAuthHeaders(userId);
 
   // ───────────────────────────────────────────────────────────────────────────

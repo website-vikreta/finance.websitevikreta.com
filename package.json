@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx lib/db/migrate.ts",
     "db:bootstrap": "tsx lib/db/bootstrap.ts",
-    "test": "npm run test:cn && npm run test:intent && npm run test:ask && npm run test:recurring && npm run test:invoices && npm run test:clients && npm run test:regression && npm run test:clarify && npm run test:credentials && npm run test:precision && npm run test:manage-input && npm run test:phases && npm run test:api && npm run test:integration && npm run test:persistence && npm run test:recurring-db",
+    "test": "npm run test:cn && npm run test:intent && npm run test:ask && npm run test:recurring && npm run test:invoices && npm run test:clients && npm run test:regression && npm run test:clarify && npm run test:credentials && npm run test:precision && npm run test:manage-input && npm run test:phases && npm run test:api && npm run test:integration && npm run test:persistence && npm run test:bank-import && npm run test:recurring-db",
     "test:regression": "tsx lib/chatbot/__tests__/regression.ts",
     "test:clarify": "tsx lib/chatbot/__tests__/clarify.ts",
     "test:credentials": "tsx lib/__tests__/credentials.ts",
@@ -27,6 +27,7 @@
     "test:integration": "tsx lib/chatbot/__tests__/chat-integration-e2e.ts",
     "test:persistence": "tsx lib/transactions/__tests__/persistence.test.ts",
     "test:recurring-db": "tsx lib/transactions/__tests__/recurring-db.test.ts",
+    "test:bank-import": "tsx lib/bank-import/__tests__/safe-log.ts && tsx lib/bank-import/__tests__/parser.ts && tsx lib/bank-import/__tests__/pdf.ts && tsx lib/bank-import/__tests__/regression.ts && tsx lib/bank-import/__tests__/business-description.ts && tsx lib/bank-import/__tests__/review.ts && tsx lib/bank-import/__tests__/upload.ts && tsx lib/bank-import/__tests__/import.ts && tsx lib/bank-import/__tests__/review-db.ts && tsx lib/bank-import/__tests__/upload-db.ts && tsx lib/bank-import/__tests__/import-db.ts && tsx lib/bank-import/__tests__/financial-integration-db.ts",
     "test:schema": "tsx lib/db/__tests__/schema-verify.ts"
   },
   "dependencies": {
@@ -38,8 +39,10 @@
     "drizzle-orm": "^0.45.4",
     "jose": "^6.2.12",
     "lucide-react": "^1.52.0",
-    "next": "16.4.0",
+    "next": "16.4.2",
     "next-themes": "^0.4.6",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "5.4.296",
     "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -56,7 +59,7 @@
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.11",
     "eslint": "^9",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"

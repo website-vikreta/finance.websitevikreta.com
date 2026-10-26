@@ -3,19 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Edit2, FileText, Plus, Trash2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { ClientFormDialog, type ClientFormData } from "./client-form-dialog";
 import { TransactionFormDialog } from "@/components/transactions/transaction-form-dialog";
-import { deleteClientAction } from "@/app/clients/actions";
+import { ClientDeleteDialog } from "./client-delete-dialog";
 import { cn } from "@/lib/utils";
 
 interface ClientActionsProps {
@@ -27,21 +19,11 @@ export function ClientActions({ client }: ClientActionsProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [incomeOpen, setIncomeOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const canDelete = client.transactionsCount === 0 && client.invoicesCount === 0;
+  const [deletingClient, setDeletingClient] = useState<{ id: string; name: string } | null>(null);
 
   async function handleDelete() {
     if (!client.id) return;
-    setDeleting(true);
-    const res = await deleteClientAction(client.id);
-    setDeleting(false);
-    if (!res.ok) {
-      toast.error(res.error);
-      return;
-    }
-    toast.success("Client deleted");
-    router.push("/clients");
+    setDeletingClient({ id: client.id, name: client.name });
   }
 
   return (
@@ -64,18 +46,17 @@ export function ClientActions({ client }: ClientActionsProps) {
         Record payment
       </Button>
 
-      {canDelete ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setDeleteOpen(true)}
-          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-          title="Delete client"
-          aria-label="Delete client"
-        >
-          <Trash2 className="size-3.5" aria-hidden />
-        </Button>
-      ) : null}
+      {/* One delete icon per client. Permanent deletion is available irrespective of
+          linked records; the server resolves the dependency graph inside one transaction. */}
+      <Button
+        size="sm"
+        onClick={handleDelete}
+        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+        title="Permanently delete client"
+        aria-label="Permanently delete client"
+      >
+        <Trash2 className="size-3.5" aria-hidden />
+      </Button>
 
       <ClientFormDialog
         open={editOpen}
@@ -91,27 +72,15 @@ export function ClientActions({ client }: ClientActionsProps) {
         defaultType="income"
       />
 
-      {canDelete ? (
-        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>Delete {client.name}?</DialogTitle>
-            </DialogHeader>
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button variant="outline" disabled={deleting} onClick={() => setDeleteOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                disabled={deleting}
-                onClick={handleDelete}
-              >
-                {deleting ? "Deleting…" : "Delete client"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      ) : null}
+      <ClientDeleteDialog
+        client={deletingClient}
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (!open) setDeletingClient(null);
+        }}
+        onDeleted={() => router.push("/clients")}
+      />
     </div>
   );
 }

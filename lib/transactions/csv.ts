@@ -3,13 +3,13 @@
  * Transactions page (exports exactly the filtered list in the browser).
  */
 
-import { formatTime } from "@/lib/format";
+import { formatDate, formatTime } from "@/lib/format";
 import type { LedgerRow } from "@/lib/transactions/queries";
 
 export const SOURCE_LABELS: Record<string, string> = {
   chatbot: "Finance AI",
   manual: "Manual",
-  bank_import: "Bank import",
+  bank_import: "Bank Statement",
 };
 
 /** Quote every cell; neutralise leading =,+,-,@ so spreadsheets don't run user text as a formula. */
@@ -24,7 +24,7 @@ const HEADER = ["Date", "Time", "Type", "Client / Expense", "Category", "Descrip
 export function toCsv(rows: LedgerRow[]): string {
   const lines = rows.map((r) =>
     [
-      r.date,
+      formatDate(r.date),
       formatTime(r.time),
       r.type === "income" ? "Income" : "Expense",
       r.title,
