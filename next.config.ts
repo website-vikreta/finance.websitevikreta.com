@@ -1,4 +1,8 @@
 import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants";
 import type { NextConfig } from "next";
 
 /**
@@ -17,12 +21,43 @@ function localDevOrigins(): string[] {
   return [...origins];
 }
 
-const nextConfig: NextConfig = {
+/**
+ * Session epoch: embedded in every session JWT and required back at verification
+ * (lib/auth.ts), so sessions die whenever the application is re-run.
+ * - Dev (next dev): evaluated per boot — every `npm run dev` restart forces re-login.
+ * - Production (next build): one UUID per build, persisted to .next/wv-session-epoch,
+ *   read back by the running server so node and the edge proxy/middleware share it —
+ *   every deploy retires all existing cookies, must-sign-in-again after release.
+ * The env var overrides everything (reproducible builds). When neither the var nor
+ * the marker exists (direct node/tsx scripts), the check is simply off.
+ */
+function sessionEpoch(phase: string): string {
+  if (process.env.WV_SESSION_EPOCH) return process.env.WV_SESSION_EPOCH;
+  if (phase === PHASE_DEVELOPMENT_SERVER) return crypto.randomUUID();
+  const marker = path.resolve(".next", "wv-session-epoch");
+  if (phase === PHASE_PRODUCTION_BUILD) {
+    fs.mkdirSync(path.dirname(marker), { recursive: true });
+    const epoch = crypto.randomUUID();
+    fs.writeFileSync(marker, epoch);
+    return epoch;
+  }
+  try {
+    return fs.readFileSync(marker, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+const nextConfig = (phase: string): NextConfig => ({
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
   experimental: {
     agentUpgrade: "security",
+  },
+  env: {
+    // "" (never) disables the epoch check in lib/auth.ts, e.g. pure node scripts.
+    WV_SESSION_EPOCH: sessionEpoch(phase),
   },
   // Dev-only: which hosts may open the HMR WebSocket (/_next/hmr). Next 16 blocks
   // this dev resource for any other origin, and the dev client responds to the
@@ -45,6 +80,6 @@ const nextConfig: NextConfig = {
       },
     },
   },
-};
+});
 
 export default nextConfig;
