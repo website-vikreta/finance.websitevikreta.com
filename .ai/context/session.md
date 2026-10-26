@@ -4,6 +4,13 @@
 
 ## Current Task
 
+2026-10-26: Fixed `######` dates in all CSV exports; added Export PDF to the Clients page (`feature/export-csv`).
+- Root cause: Excel auto-converts date-looking CSV strings into date cells and collapses them to `######` at the default column width (text cells never do, which is why only some columns broke). Clients CSV also wrote raw ISO (`lastPaymentDate`, `firstSeen`).
+- Fix: shared `dateCell` in `lib/transactions/csv.ts` writes strict `YYYY-MM-DD` with one leading space (stays text in every spreadsheet), used by ledger CSV (transactions page + Settings → Export all), clients CSV, and the report CSV transactions section; old and new rows render identically. Unit tests (`test:clients`) + the bank-import financial-integration assertion now pin the format.
+- Clients page: Export PDF added via the shared `ExportPdfButton` (now accepts `disabled`) wired to the previously committed but never-wired `components/clients/print-clients.tsx` (restored to its committed design: "Clients report" title, Metric summary, Location/GSTIN column, sorted-by badge; screen-consistent labels, shared `owedText` moved to `lib/format.ts`, row-level `negative` flag dropped because PrintTable colors only the last cell). Search/filter/sort rows sit inside `print:hidden`, mirroring the transactions page.
+- Also unblocked `next build`: the pre-existing `Uint8Array` → `BlobPart` type error in `lib/bank-import/__tests__/business-description-e2e-db.ts` (documented 2026-10-25) is fixed with a scoped `as BlobPart` on the test's synthetic-PDF bytes.
+- Verified: `npm run test:clients`, `test:precision`, `test:invoices`, `test:cn`, `test:credentials`, `test:manage-input`, ESLint on changed files, `tsc --noEmit`, `next build` (all routes), real-DB read-only smoke (48 real `txn_date` values → every ledger/report Date cell `" YYYY-MM-DD"`). DB-backed suites skipped (no disposable DB; live app DB untouched); unauth redirects (`/login` 200, protected 307) confirmed on `next dev`.
+
 2026-10-25: Permanent client deletion moved to `feature/bank-statement` for combined testing with bank-import.
 - `permanentlyDeleteClient` in `lib/clients/clients.ts`: atomic hard-delete of client + transactions/invoices/recurring bills in one PG transaction; bank-import staging rows retained (client link removed, links to deleted txns/invoices severed & marked skipped); minimal audit event recorded.
 - Strong confirmation requires exact client name; counts recomputed server-side; no guard blocking deletion due to linked records.

@@ -251,3 +251,9 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 - Where: `lib/bank-import/review.ts`
 - Why: An existing client could be visible in `/clients` and the picker while bank-import creation failed because the lookup examined a different client first.
 - Date: 2026-10-24
+
+### [Data] - CSV date cells are text-forced ISO, never spreadsheet dates
+- Rule: Every date cell in every CSV export (ledger, clients, reports) is written through `dateCell` (`lib/transactions/csv.ts`): strict `YYYY-MM-DD` (trimmed slice, non-dates and nulls pass through / fallback) prefixed with a single leading space, then quoted like any other cell. Never feed raw ISO (`c.firstSeen`) or `formatDate` output into a CSV date column.
+- Where: `lib/transactions/csv.ts` (`toCsv`, `dateCell`), `lib/clients/csv.ts`, `lib/reports/csv.ts`
+- Why: Excel auto-converts plain date-looking strings into date cells and shows `######` at its default column width (plus regional re-formatting), so managers saw broken-looking dates on clients/ledger/reports CSVs. The leading space keeps the cell text in every spreadsheet (Excel, Sheets), preserves exact values for old and new rows, and ISO still sorts chronologically.
+- Date: 2026-10-26
