@@ -57,10 +57,12 @@ function show(key: Key, value: string): string {
 }
 
 function Field({ id, label, value, placeholder, hint, readOnly }: { id: Key; label: string; value: string; placeholder?: string; hint?: string; readOnly: boolean }) {
+  // Base UI Input initializes uncontrolled state from defaultValue; keying it on the
+  // value remounts (rather than mutating) when the profile streams in or after a save.
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={`company-${id}`}>{label}</Label>
-      <Input id={`company-${id}`} name={id} defaultValue={value} placeholder={readOnly ? undefined : placeholder} autoComplete="off" readOnly={readOnly} className={readOnly ? "bg-muted/40" : undefined} />
+      <Input key={value} id={`company-${id}`} name={id} defaultValue={value} placeholder={readOnly ? undefined : placeholder} autoComplete="off" readOnly={readOnly} className={readOnly ? "bg-muted/40" : undefined} />
       {hint ? <p className="text-caption text-muted-foreground">{hint}</p> : null}
     </div>
   );
