@@ -4,6 +4,11 @@
 
 ## Current Task
 
+2026-10-28: Added "Contractor Payment" category + SWIFT code field (`feature/export-csv`).
+- Category: appended "Contractor Payment" after "Salaries" in `lib/transactions/categories.ts` (forms + chatbot enum/prompt use the const; ledger filter and bank-import review read the DB). Migration `drizzle/0020_contractor_payment_swift.sql` inserts it `ON CONFLICT DO NOTHING` — APPLIED to the live Supabase DB on 2026-10-31 via `npm run db:migrate` (verified: category id 11 present, `swift_code` column present).
+- SWIFT: `company_profile.swift_code` varchar(11) (schema.ts + migration 0020 + snapshot 0020 + journal idx 20). Settings form field "SWIFT code" right after IFSC with identical behavior (upper-normalize, confirmation diff, admin-only, audited). Validation regex `^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$` (8 or 11 chars, looks like HDFCINBB). Invoice doc prints SWIFT only when filled, same as IFSC.
+- Verified: tsc, ESLint on changed files, `test:manage-input`, `test:ask`, `test:clarify`. No DB writes, no commits.
+
 2026-10-26: Fixed `######` dates in all CSV exports; added Export PDF to the Clients page (`feature/export-csv`).
 - Root cause: Excel auto-converts date-looking CSV strings into date cells and collapses them to `######` at the default column width (text cells never do, which is why only some columns broke). Clients CSV also wrote raw ISO (`lastPaymentDate`, `firstSeen`).
 - Fix: shared `dateCell` in `lib/transactions/csv.ts` writes strict `YYYY-MM-DD` with one leading space (stays text in every spreadsheet), used by ledger CSV (transactions page + Settings → Export all), clients CSV, and the report CSV transactions section; old and new rows render identically. Unit tests (`test:clients`) + the bank-import financial-integration assertion now pin the format.
