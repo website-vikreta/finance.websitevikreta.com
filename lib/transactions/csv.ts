@@ -3,7 +3,7 @@
  * Transactions page (exports exactly the filtered list in the browser).
  */
 
-import { formatDate, formatTime } from "@/lib/format";
+import { formatTime } from "@/lib/format";
 import type { LedgerRow } from "@/lib/transactions/queries";
 
 export const SOURCE_LABELS: Record<string, string> = {
@@ -19,12 +19,29 @@ function cell(value: string | number | null): string {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+/**
+ * A date column value for every CSV export (ledger, clients, reports).
+ *
+ * Plain date strings are auto-converted by Excel into date cells, which then
+ * re-render in its regional format or collapse to "######" when the default
+ * column is narrow. So dates are written as a fixed YYYY-MM-DD value forced to
+ * text: the leading space stops every spreadsheet from converting it, the year
+ * sorts correctly, and old and new entries read exactly alike (server and
+ * browser CSVs use the same path).
+ *
+ * Returns the raw cell text — the caller quotes it with its own cell().
+ */
+export function dateCell(value: string | null | undefined, fallback = ""): string {
+  const text = (value ?? "").trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? " " + text : text || fallback;
+}
+
 const HEADER = ["Date", "Time", "Type", "Client / Expense", "Category", "Description", "Amount (INR)", "Original amount", "Currency", "Exchange rate", "Source"];
 
 export function toCsv(rows: LedgerRow[]): string {
   const lines = rows.map((r) =>
     [
-      formatDate(r.date),
+      dateCell(r.date),
       formatTime(r.time),
       r.type === "income" ? "Income" : "Expense",
       r.title,

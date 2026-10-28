@@ -5,6 +5,7 @@
 
 import type { ClientSummary } from "@/lib/transactions/queries";
 import type { Owed } from "@/lib/invoices/invoices";
+import { dateCell } from "@/lib/transactions/csv";
 
 /** Quote every cell; neutralise leading =,+,-,@ so spreadsheets don't run user text as a formula. */
 function cell(value: string | number | null | undefined): string {
@@ -47,8 +48,8 @@ export function toClientsCsv(
       (o?.INR ?? 0).toFixed(2),
       (o?.USD ?? 0).toFixed(2),
       c.payments,
-      c.lastPaymentDate ?? "None",
-      c.firstSeen,
+      dateCell(c.lastPaymentDate, "None"),
+      dateCell(c.firstSeen),
     ]
       .map(cell)
       .join(",");

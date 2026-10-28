@@ -17,6 +17,7 @@ export async function getCompanyProfile(): Promise<CompanyProfile | null> {
 const GSTIN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const PAN = /^[A-Z]{5}\d{4}[A-Z]$/;
 const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const SWIFT = /^[A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?$/;
 const UPI = /^[\w.-]{2,}@[a-zA-Z]{2,}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -38,6 +39,7 @@ export function parseCompanyProfile(raw: unknown) {
     accountName: text(i.accountName, 255),
     accountNumber: upper(i.accountNumber, 34),
     ifsc: upper(i.ifsc, 11),
+    swiftCode: upper(i.swiftCode, 11),
     upiId: text(i.upiId, 100),
     invoicePrefix: upper(i.invoicePrefix, 10) ?? "WV",
     defaultGstRate: typeof i.defaultGstRate === "string" && (GST_RATES as readonly string[]).includes(i.defaultGstRate) ? i.defaultGstRate : null,
@@ -52,6 +54,7 @@ export function parseCompanyProfile(raw: unknown) {
   if (v.gstin && v.pan && v.gstin.slice(2, 12) !== v.pan) return { ok: false as const, error: "PAN doesn't match the PAN inside the GSTIN." };
   if (v.email && !EMAIL.test(v.email)) return { ok: false as const, error: "Enter a valid email." };
   if (v.ifsc && !IFSC.test(v.ifsc)) return { ok: false as const, error: "IFSC should look like HDFC0001234." };
+  if (v.swiftCode && !SWIFT.test(v.swiftCode)) return { ok: false as const, error: "SWIFT code should look like HDFCINBB." };
   if (v.upiId && !UPI.test(v.upiId)) return { ok: false as const, error: "UPI ID should look like name@bank." };
   if (!/^[A-Z0-9-]{1,10}$/.test(v.invoicePrefix)) return { ok: false as const, error: "Invoice prefix: letters, numbers or dashes (max 10)." };
   if (!v.defaultGstRate) return { ok: false as const, error: "Pick a default GST rate." };
