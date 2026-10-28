@@ -261,6 +261,7 @@ export const companyProfile = pgTable(
     accountName: varchar("account_name", { length: 255 }),
     accountNumber: varchar("account_number", { length: 34 }),
     ifsc: varchar("ifsc", { length: 11 }),
+    swiftCode: varchar("swift_code", { length: 11 }),
     upiId: varchar("upi_id", { length: 100 }),
     invoicePrefix: varchar("invoice_prefix", { length: 10 }).notNull().default("WV"),
     defaultGstRate: numeric("default_gst_rate", { precision: 5, scale: 2 }).notNull().default("18"),

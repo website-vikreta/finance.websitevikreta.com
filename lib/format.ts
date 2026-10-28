@@ -77,6 +77,11 @@ export function percentChange(current: number, previous: number): number | null 
 }
 
 
+/** "₹50,000 + $1,200" for what a client still owes on invoices. */
+export function owedText(o: { INR: number; USD: number }): string {
+  return [o.INR > 0 ? formatINR(o.INR) : null, o.USD > 0 ? `$${o.USD.toLocaleString("en-US")}` : null].filter(Boolean).join(" + ");
+}
+
 /** Share of a total for labels: "<1%" for tiny non-zero parts so they never read as nothing. */
 export function formatShare(part: number, total: number): string {
   if (total <= 0 || part <= 0) return "0%";

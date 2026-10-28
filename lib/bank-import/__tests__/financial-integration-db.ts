@@ -422,6 +422,7 @@ async function run(): Promise<void> {
   assert.ok(ledgerCsv.includes(CATEGORY_NAME), "ledger CSV contains category name");
   assert.ok(ledgerCsv.includes('"1250.00"'), "ledger CSV contains income amount");
   assert.ok(ledgerCsv.includes('"400.00"'), "ledger CSV contains expense amount");
+  assert.ok(ledgerCsv.includes(`" ${today}"`), "ledger CSV writes dates as text-forced YYYY-MM-DD (Excel never shows ######)");
 
   const reportCsv = toReportCsv({
     periodLabel: "This Month",

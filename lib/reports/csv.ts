@@ -1,5 +1,5 @@
-import { formatDate, formatMonthShort, formatShare, formatTime } from "@/lib/format";
-import { SOURCE_LABELS } from "@/lib/transactions/csv";
+import { formatMonthShort, formatShare, formatTime, formatDate } from "@/lib/format";
+import { SOURCE_LABELS, dateCell } from "@/lib/transactions/csv";
 import type { Breakdown, LedgerRow, MonthTotals } from "@/lib/transactions/queries";
 
 /** Quote every cell; neutralise leading =,+,-,@ so spreadsheets don't run user text as a formula. */
@@ -112,7 +112,7 @@ export function toReportCsv({
   } else {
     for (const r of rows) {
       lines.push([
-        formatDate(r.date),
+        dateCell(r.date),
         formatTime(r.time),
         r.type === "income" ? "Income" : "Expense",
         r.title,

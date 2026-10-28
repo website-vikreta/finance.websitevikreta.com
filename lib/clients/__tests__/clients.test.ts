@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { parseClient } from "../clients";
 import { toClientsCsv } from "../csv";
+import { dateCell } from "../../transactions/csv";
 
 console.log("Running Client Validation Unit Tests...");
 
@@ -147,11 +148,25 @@ console.log("Running Client Validation Unit Tests...");
   // Checks header row
   assert.ok(csv.includes('"Client Name","GSTIN","Email"'));
 
-  // Checks normal row
-  assert.ok(csv.includes('"Acme Corp","27ABCDE1234F1Z5","billing@acme.com","27","India","100000.00","25000.00","75000.00","15000.00","0.00","4","2026-10-10","2026-01-15"'));
+  // Checks normal row — dates are text-forced ISO (leading space) so Excel never
+  // converts them to date cells and shows ###### or a re-formatted value.
+  assert.ok(csv.includes('"Acme Corp","27ABCDE1234F1Z5","billing@acme.com","27","India","100000.00","25000.00","75000.00","15000.00","0.00","4"," 2026-10-10"," 2026-01-15"'));
 
   // Checks formula injection prevention (escaped with leading single quote)
   assert.ok(csv.includes('\'=cmd|'));
+}
+
+// 11. dateCell — one text-safe value for every CSV date column (ledger, clients,
+//     reports): raw text here, the caller's cell() adds the CSV quoting.
+{
+  assert.equal(dateCell("2026-10-10"), " 2026-10-10");
+  // Full ISO timestamps keep only the date part.
+  assert.equal(dateCell("2026-10-10T14:30:00.000Z"), " 2026-10-10");
+  // Null falls back to its column label; undefined to an empty cell.
+  assert.equal(dateCell(null, "None"), "None");
+  assert.equal(dateCell(undefined), "");
+  // Non-date junk still gets quoted hash-safely, never silently reformatted.
+  assert.equal(dateCell("None"), "None");
 }
 
 console.log("All client validation & CSV unit tests passed!");

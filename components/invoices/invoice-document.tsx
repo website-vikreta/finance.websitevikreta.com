@@ -115,6 +115,7 @@ export function InvoiceDocument({ invoice, company: current }: { invoice: Invoic
                 {company.accountName ? <Pair label="Account name" value={company.accountName} /> : null}
                 {company.accountNumber ? <Pair label="Account no." value={company.accountNumber} /> : null}
                 {company.ifsc ? <Pair label="IFSC" value={company.ifsc} /> : null}
+                {company.swiftCode ? <Pair label="SWIFT" value={company.swiftCode} /> : null}
                 {company.upiId ? <Pair label="UPI" value={company.upiId} /> : null}
               </dl>
             </div>

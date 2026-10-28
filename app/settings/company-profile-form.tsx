@@ -27,6 +27,7 @@ const FIELDS = [
   ["accountName", "Account name"],
   ["accountNumber", "Account number"],
   ["ifsc", "IFSC"],
+  ["swiftCode", "SWIFT code"],
   ["upiId", "UPI ID"],
   ["invoicePrefix", "Invoice prefix"],
   ["defaultGstRate", "Default GST rate"],
@@ -35,7 +36,7 @@ const FIELDS = [
 type Key = (typeof FIELDS)[number][0];
 
 /** Same clean-up the server applies, so the panel shows what will really be saved. */
-const UPPER: Key[] = ["gstin", "pan", "accountNumber", "ifsc", "invoicePrefix"];
+const UPPER: Key[] = ["gstin", "pan", "accountNumber", "ifsc", "swiftCode", "invoicePrefix"];
 function normalize(key: Key, value: string): string {
   const v = value.trim();
   return UPPER.includes(key) ? v.toUpperCase().replace(/\s+/g, "") : v;
@@ -56,10 +57,12 @@ function show(key: Key, value: string): string {
 }
 
 function Field({ id, label, value, placeholder, hint, readOnly }: { id: Key; label: string; value: string; placeholder?: string; hint?: string; readOnly: boolean }) {
+  // Base UI Input initializes uncontrolled state from defaultValue; keying it on the
+  // value remounts (rather than mutating) when the profile streams in or after a save.
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={`company-${id}`}>{label}</Label>
-      <Input id={`company-${id}`} name={id} defaultValue={value} placeholder={readOnly ? undefined : placeholder} autoComplete="off" readOnly={readOnly} className={readOnly ? "bg-muted/40" : undefined} />
+      <Input key={value} id={`company-${id}`} name={id} defaultValue={value} placeholder={readOnly ? undefined : placeholder} autoComplete="off" readOnly={readOnly} className={readOnly ? "bg-muted/40" : undefined} />
       {hint ? <p className="text-caption text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -134,6 +137,7 @@ export function CompanyProfileForm({ profile, readOnly }: { profile: CompanyProf
         <Field id="accountName" label="Account name" value={value("accountName")} readOnly={readOnly} />
         <Field id="accountNumber" label="Account number" value={value("accountNumber")} readOnly={readOnly} />
         <Field id="ifsc" label="IFSC" value={value("ifsc")} placeholder="HDFC0001234" readOnly={readOnly} />
+        <Field id="swiftCode" label="SWIFT code" value={value("swiftCode")} placeholder="HDFCINBB" readOnly={readOnly} />
         <Field id="upiId" label="UPI ID" value={value("upiId")} placeholder="websitevikreta@hdfcbank" readOnly={readOnly} />
         <Field id="invoicePrefix" label="Invoice prefix" value={value("invoicePrefix")} hint="Numbers look like WV/2026-27/001." readOnly={readOnly} />
         <div className="flex flex-col gap-2">

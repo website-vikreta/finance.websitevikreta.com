@@ -2,6 +2,7 @@
 export const CATEGORIES = [
   "Rent",
   "Salaries",
+  "Contractor Payment",
   "Software & subscriptions",
   "Cloud & hosting",
   "Office supplies",
