@@ -12,7 +12,7 @@
  *   only status, classification, mapping presence, and flag counts.
  */
 
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   auditEvents,
@@ -898,6 +898,240 @@ export async function markLineDuplicate(
   } catch (error) {
     logSafeDbError("markLineDuplicate", error);
     return { ok: false, error: "Marking the duplicate failed. Try again." };
+  }
+}
+
+// ─── Bulk duplicate marking ──────────────────────────────────────────────────
+
+/** Upper bound for one bulk Duplicate action; mirrors the import batch cap. */
+export const MAX_DUPLICATE_BATCH = 100;
+
+/**
+ * Shared note stored on rows marked duplicate through the selection buttons.
+ * Visible to the reviewer in place of a per-row note, which stays editable via
+ * Reopen → review editor.
+ */
+export const BULK_DUPLICATE_NOTE = "Selected as duplicate in review";
+
+export interface BulkDuplicateFailure {
+  lineId: string;
+  rowNumber: number;
+  error: string;
+}
+
+export interface BulkDuplicateResult {
+  ok: boolean;
+  /** Batch-level error (unknown statement, wrong state, no lines). */
+  error: string | null;
+  requested: number;
+  marked: number;
+  alreadyDuplicate: number;
+  failed: number;
+  statementStatus: string | null;
+  failures: BulkDuplicateFailure[];
+}
+
+/**
+ * Decides what the bulk duplicate action can do with one selected row.
+ * Pure policy, shared by the server action and the offline checks:
+ * pending/ready rows become duplicates, rows already marked stay untouched,
+ * everything else needs its existing review path (reopen or import flow).
+ */
+export function bulkDuplicateDecision(
+  lineStatus: LineStatus,
+  statementStatus: string,
+): { action: "mark" } | { action: "skip" } | { action: "reject"; error: string } {
+  if (statementStatus !== "review") {
+    return { action: "reject", error: STATEMENT_NOT_REVIEWABLE };
+  }
+  if (lineStatus === "pending" || lineStatus === "ready") return { action: "mark" };
+  if (lineStatus === "duplicate") return { action: "skip" };
+  if (lineStatus === "imported") return { action: "reject", error: IMPORTED_LOCKED };
+  if (lineStatus === "error") return { action: "reject", error: ERROR_LOCKED };
+  return { action: "reject", error: NEEDS_REOPEN };
+}
+
+interface BulkDupLineRaw {
+  id: string;
+  rowNumber: number | string;
+  status: string;
+  statementStatus: string;
+  classification: string;
+  flags: unknown;
+  clientId: string | null;
+  categoryId: number | null;
+  invoiceId: string | null;
+  skipReason: string | null;
+  reviewedBy: string | null;
+}
+
+/**
+ * Marks many selected lines as `duplicate` in one pass. One transaction locks
+ * the statement and every requested line, so a second reviewer running the
+ * same action serializes instead of racing. Each marked line gets its own
+ * audit event; the decision is staging-only, no data moves anywhere.
+ */
+export async function markLinesDuplicate(
+  userId: string,
+  rawStatementId: unknown,
+  rawLineIds: unknown,
+): Promise<BulkDuplicateResult> {
+  const emptyBatch = (error: string, requested = 0): BulkDuplicateResult => ({
+    ok: false,
+    error,
+    requested,
+    marked: 0,
+    alreadyDuplicate: 0,
+    failed: 0,
+    statementStatus: null,
+    failures: [],
+  });
+
+  if (typeof rawStatementId !== "string" || !UUID_RE.test(rawStatementId)) {
+    return emptyBatch("This statement could not be resolved.");
+  }
+  if (!Array.isArray(rawLineIds) || rawLineIds.length === 0) {
+    return emptyBatch("Select at least one row to mark as duplicate.");
+  }
+  if (rawLineIds.length > MAX_DUPLICATE_BATCH) {
+    return emptyBatch(
+      `Mark at most ${MAX_DUPLICATE_BATCH} rows as duplicate per batch.`,
+      rawLineIds.length,
+    );
+  }
+  const deduped = [...new Set(rawLineIds)];
+  if (deduped.some((id) => typeof id !== "string" || !UUID_RE.test(id))) {
+    return emptyBatch(
+      "Some selected rows could not be resolved. Refresh and try again.",
+      rawLineIds.length,
+    );
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      // Lock the requested lines together with their statement in one
+      // statement, mirroring `loadReviewLine`'s `FOR UPDATE OF l, s` ordering.
+      const loaded = await tx
+        .select({
+          id: bankStatementLines.id,
+          rowNumber: bankStatementLines.rowNumber,
+          status: bankStatementLines.status,
+          statementStatus: bankStatements.status,
+          classification: bankStatementLines.classification,
+          flags: bankStatementLines.flags,
+          clientId: bankStatementLines.clientId,
+          categoryId: bankStatementLines.categoryId,
+          invoiceId: bankStatementLines.invoiceId,
+          skipReason: bankStatementLines.skipReason,
+          reviewedBy: bankStatementLines.reviewedBy,
+        })
+        .from(bankStatementLines)
+        .innerJoin(bankStatements, eq(bankStatements.id, bankStatementLines.statementId))
+        .where(
+          and(
+            eq(bankStatementLines.statementId, rawStatementId),
+            inArray(bankStatementLines.id, deduped),
+          ),
+        )
+        .for("update", { of: [bankStatementLines, bankStatements] });
+      const rows = loaded as unknown as BulkDupLineRaw[];
+      if (rows.length === 0) {
+        return emptyBatch("This statement could not be found.", deduped.length);
+      }
+      // Every line of one statement shares the same statement status.
+      const statementStatus = rows[0].statementStatus;
+
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const failures: BulkDuplicateFailure[] = [];
+      const now = new Date();
+      let marked = 0;
+      let alreadyDuplicate = 0;
+
+      for (const lineId of deduped) {
+        const row = byId.get(lineId);
+        if (!row) {
+          failures.push({
+            lineId,
+            rowNumber: 0,
+            error: LINE_NOT_FOUND,
+          });
+          continue;
+        }
+
+        const decision = bulkDuplicateDecision(row.status as LineStatus, statementStatus);
+        if (decision.action === "reject") {
+          failures.push({ lineId, rowNumber: Number(row.rowNumber), error: decision.error });
+          continue;
+        }
+        if (decision.action === "skip") {
+          alreadyDuplicate += 1;
+          continue;
+        }
+
+        await tx
+          .update(bankStatementLines)
+          .set({
+            status: "duplicate",
+            skipReason: BULK_DUPLICATE_NOTE,
+            reviewedBy: userId,
+            reviewedAt: now,
+            updatedAt: now,
+          })
+          .where(eq(bankStatementLines.id, row.id));
+
+        await tx.insert(auditEvents).values({
+          entityType: "bank_statement_line",
+          entityId: row.id,
+          action: "duplicate_marked",
+          performedBy: userId,
+          source: "bank_import",
+          beforeState: {
+            status: row.status,
+            classification: row.classification,
+            hasClient: row.clientId != null,
+            hasCategory: row.categoryId != null,
+            hasInvoice: row.invoiceId != null,
+            flagCount: Array.isArray(row.flags) ? row.flags.length : 0,
+            hasSkipReason: row.skipReason != null,
+            reviewedBy: row.reviewedBy,
+          },
+          afterState: {
+            status: "duplicate",
+            classification: row.classification,
+            hasClient: row.clientId != null,
+            hasCategory: row.categoryId != null,
+            hasInvoice: row.invoiceId != null,
+            flagCount: Array.isArray(row.flags) ? row.flags.length : 0,
+            hasSkipReason: true,
+            reviewedBy: userId,
+          },
+          metadata: { reason: BULK_DUPLICATE_NOTE, bulkSelection: true },
+        });
+
+        marked += 1;
+      }
+
+      if (marked > 0) {
+        await tx
+          .update(bankStatements)
+          .set({ updatedAt: now })
+          .where(eq(bankStatements.id, rawStatementId));
+      }
+
+      return {
+        ok: true,
+        error: null,
+        requested: deduped.length,
+        marked,
+        alreadyDuplicate,
+        failed: failures.length,
+        statementStatus: null,
+        failures,
+      } satisfies BulkDuplicateResult;
+    });
+  } catch (error) {
+    logSafeDbError("markLinesDuplicate", error);
+    return emptyBatch("Marking the duplicates failed. Try again.", deduped.length);
   }
 }
 

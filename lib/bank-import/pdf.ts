@@ -6,6 +6,7 @@ import {
 } from "pdf-parse";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { parseStatementPages } from "./parse";
+import { isMetadataLine, isSummaryLine } from "./parse";
 import { parseAmountCell, parseDateCell } from "./normalize";
 import {
   BankImportError,
@@ -78,13 +79,24 @@ function near(value: number, left: number, right: number): boolean {
   return Math.abs(value - left) <= Math.abs(value - right);
 }
 
+/** Compact text of one positioned row (for furniture detection). */
+function rowText(row: PositionedRow): string {
+  return row.items.map((item) => item.text).join(" ");
+}
+
+/** True when the row's x anchor sits inside the `[left, right]` band. */
+function withinBand(x: number, left: number, right: number): boolean {
+  return x >= left && x <= right;
+}
+
 function rowToCells(row: PositionedRow, anchors: ColumnAnchors): string[] {
   const cells = ["", "", "", "", "", "", ""];
   const narrationReferenceBoundary = (anchors.narration + anchors.reference) / 2;
   const referenceValueDateBoundary = (anchors.reference + anchors.valueDate) / 2;
 
   for (const item of row.items) {
-    const date = parseDateCell(item.text);
+    // A date token that also parses as money ("1,003.00") is money, never a date.
+    const date = parseAmountCell(item.text).ok ? { ok: false as const } : parseDateCell(item.text);
     if (date.ok) {
       const target = near(item.x, anchors.txnDate, anchors.valueDate) ? 0 : 3;
       cells[target] = [cells[target], item.text].filter(Boolean).join(" ");
@@ -106,10 +118,229 @@ function rowToCells(row: PositionedRow, anchors: ColumnAnchors): string[] {
   return cells;
 }
 
+/** Whether the row carries a genuine transaction date in the two date bands. */
+function hasDateAtAnchor(row: PositionedRow, anchors: ColumnAnchors): boolean {
+  return row.items.some(
+    (item) =>
+      withinBand(item.x, anchors.txnDate - 20, anchors.valueDate - 10) &&
+      !parseAmountCell(item.text).ok &&
+      parseDateCell(item.text).ok,
+  );
+}
+
+/** Whether any of the three money columns holds a numeric token. */
+function hasMoneyAtAnchor(row: PositionedRow, anchors: ColumnAnchors): boolean {
+  return row.items.some(
+    (item) =>
+      item.x >= anchors.valueDate - 8 &&
+      item.right <= anchors.closing + 40 &&
+      parseAmountCell(item.text).ok,
+  );
+}
+
+/** A narration y-row carries text in the narration/reference bands only. */
+function rowHasNarrationText(row: PositionedRow, anchors: ColumnAnchors): boolean {
+  return row.items.some(
+    (item) =>
+      item.x < anchors.withdrawal - 8 &&
+      /[a-z0-9]/i.test(item.text) &&
+      !parseAmountCell(item.text).ok &&
+      !parseDateCell(item.text).ok,
+  );
+}
+
+/** Caption rows (the printed column headings) never become transactions. */
+function isColumnCaptionRow(row: PositionedRow): boolean {
+  const KEYWORDS = [
+    /narration/i, /chq|ref\.?|ref(?:erence)?\b/i, /value\s*(?:date|dt)/i,
+    /withdrawal/i, /deposit/i, /balance/i, /txn\s*date|transaction\s*date/i,
+  ];
+  return row.items.filter((item) => KEYWORDS.some((pattern) => pattern.test(item.text))).length >= 4;
+}
+
+const HEADER_ROW = [
+  "Transaction Date", "Narration", "Reference", "Value Date",
+  "Withdrawal Amount", "Deposit Amount", "Closing Balance",
+];
+
+/**
+ * Groups the page's positioned rows into one output row per transaction:
+ *
+ * - a transaction anchor is a y-row with a date in the date band and an
+ *   amount or balance in the money bands;
+ * - narration-only rows (this bank prints wrapped narration above and below
+ *   the amount row) attach to the anchor they are vertically closest to, so a
+ *   wrapped narration is never read as a separate transaction;
+ * - rows beyond the attach radius stay separate review rows, so uncertain
+ *   source content is never silently discarded;
+ * - repeated page headers, metadata and footer furniture above the body and
+ *   below the last transaction are dropped.
+ */
+function reconstructTransactionRows(
+  rows: PositionedRow[],
+  anchors: ColumnAnchors,
+): string[][] {
+  type Candidate = { row: PositionedRow; kind: "anchor" | "narration" };
+  const candidates: Candidate[] = [];
+  for (const row of rows) {
+    const text = rowText(row);
+    if (isSummaryLine(text) || isMetadataLine(text) || isColumnCaptionRow(row)) continue;
+    if (hasDateAtAnchor(row, anchors) && hasMoneyAtAnchor(row, anchors)) {
+      candidates.push({ row, kind: "anchor" });
+    } else if (
+      !hasDateAtAnchor(row, anchors) &&
+      !hasMoneyAtAnchor(row, anchors) &&
+      rowHasNarrationText(row, anchors)
+    ) {
+      candidates.push({ row, kind: "narration" });
+    }
+  }
+  const anchorsOnly = candidates.filter((c) => c.kind === "anchor").map((c) => c.row);
+  if (anchorsOnly.length === 0) return [];
+
+  // Narration wraps are adjacent text lines. The line pitch bounds how far a
+  // wrapped line can sit from its transaction row: one and a half line gaps.
+  // A page whose candidates never wrap has no measurable pitch, so every
+  // narration row stays unattached (kept for review) instead of being guessed.
+  const lineGaps: number[] = [];
+  for (let i = 1; i < candidates.length; i += 1) {
+    lineGaps.push(Math.abs(candidates[i - 1].row.y - candidates[i].row.y));
+  }
+  lineGaps.sort((a, b) => a - b);
+  const linePitch = lineGaps.length > 0 ? lineGaps[Math.floor(lineGaps.length / 2)] : 0;
+  const attachRadius = linePitch > 0 ? linePitch * 1.5 : 0;
+  const hasNarration = candidates.some((c) => c.kind === "narration");
+
+  const narrationBlocks = new Map<PositionedRow, PositionedRow[]>();
+  const unattached: PositionedRow[] = [];
+  for (const candidate of candidates) {
+    if (candidate.kind !== "narration") continue;
+    // Rows before the first transaction or after the last one are page
+    // furniture (captions, footers); only a wrapped continuation could sit
+    // within the attach radius of a body anchor.
+    let best: PositionedRow | null = null;
+    let bestDistance = attachRadius;
+    for (const anchor of anchorsOnly) {
+      const distance = Math.abs(anchor.y - candidate.row.y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = anchor;
+      }
+    }
+    if (best) {
+      const block = narrationBlocks.get(best) ?? [];
+      block.push(candidate.row);
+      narrationBlocks.set(best, block);
+    } else {
+      // Association is uncertain: the row is preserved for reviewer inspection
+      // when the statement shows wrapped narration, and dropped as shell
+      // otherwise (captions/footers of never-wrapping pages).
+      if (hasNarration) unattached.push(candidate.row);
+    }
+  }
+
+  const tableRows: string[][] = [[...HEADER_ROW]];
+  for (const anchor of anchorsOnly) {
+    // Print order for a block: lead narration above, the anchor row itself,
+    // then continuation lines below. The transaction date always comes from
+    // the anchor row; narration lines never carry it.
+    const block = [...(narrationBlocks.get(anchor) ?? []), anchor].sort((a, b) => b.y - a.y);
+    const cellsList = block.map((row) => rowToCells(row, anchors));
+    const anchorIndex = block.indexOf(anchor);
+    const merged = ["", "", "", "", "", "", ""];
+    merged[0] = cellsList[anchorIndex][0] || cellsList.find((cells) => cells[0])?.[0] || "";
+    for (const cells of cellsList) {
+      for (let column = 1; column <= 6; column += 1) {
+        if (cells[column]) {
+          merged[column] = [merged[column], cells[column]].filter(Boolean).join(" ");
+        }
+      }
+    }
+    tableRows.push(merged);
+  }
+  // Uncertain association is never merged; it stays a flagged review row.
+  for (const row of unattached.sort((a, b) => b.y - a.y)) {
+    tableRows.push(rowToCells(row, anchors));
+  }
+  return tableRows;
+}
+
+/** Buckets nearby x values into clusters within `tolerance` pixels. */
+function xClusters(values: number[], tolerance: number): Array<{ position: number; count: number }> {
+  const sorted = [...values].sort((a, b) => a - b);
+  const clusters: Array<{ position: number; count: number }> = [];
+  for (const value of sorted) {
+    const last = clusters[clusters.length - 1];
+    if (last && Math.abs(value - last.position) <= tolerance) {
+      last.count += 1;
+      last.position = (last.position * (last.count - 1) + value) / last.count; // running mean
+    } else {
+      clusters.push({ position: value, count: 1 });
+    }
+  }
+  return clusters;
+}
+
+/**
+ * Derives column anchors from the page's own transaction geometry when a page
+ * does not print (or clearly reuse) a heading row. Evidence must be strong:
+ * two separated date clusters and three separated money clusters, with the
+ * money columns in the canonical order (withdrawal, deposit, balance). This
+ * keeps pages printed with different header punctuation or positions adaptive
+ * instead of silently shifting values into wrong fields.
+ */
+function anchorsFromGeometry(rows: PositionedRow[]): ColumnAnchors | null {
+  const dateXs: number[] = [];
+  const moneyRights: number[] = [];
+  let moneyRows = 0;
+  for (const row of rows) {
+    let rowMoney = 0;
+    for (const item of row.items) {
+      if (parseAmountCell(item.text).ok) continue;
+      if (parseDateCell(item.text).ok) {
+        dateXs.push(item.x);
+        continue;
+      }
+      if (/^\d[\d,]*(?:\.\d{2})?$/.test(item.text)) {
+        moneyRights.push(item.right);
+        rowMoney += 1;
+      }
+    }
+    if (rowMoney >= 2) moneyRows += 1;
+  }
+  if (moneyRows < 3 || dateXs.length < 4) return null;
+
+  const dateClusters = xClusters(dateXs, 20).filter((c) => c.count >= 3);
+  const moneyClusters = xClusters(moneyRights, 20).filter((c) => c.count >= 3);
+  if (dateClusters.length < 2 || moneyClusters.length !== 3) return null;
+  if (dateClusters[1].position - dateClusters[0].position < 60) return null;
+  if (moneyClusters[1].position - moneyClusters[0].position < 40) return null;
+
+  const txnDate = dateClusters[0].position;
+  const valueDate = dateClusters[1].position;
+  // Money columns are right-aligned; their printed right edges order the
+  // withdrawal, deposit and balance bands.
+  const withdrawalRight = moneyClusters[0].position;
+  const closingRight = moneyClusters[2].position;
+  const narrRefBoundary = txnDate + (valueDate - txnDate) * 0.55;
+  return {
+    txnDate,
+    narration: txnDate + 20,
+    reference: narrRefBoundary,
+    valueDate,
+    withdrawal: withdrawalRight - 60,
+    deposit: withdrawalRight + 60,
+    closing: closingRight - 40,
+  };
+}
+
 /**
  * Uses PDF.js text coordinates and the statement's printed header to preserve
- * empty cells and distinguish the three right-aligned money columns. This is
- * intentionally in-memory; only normalized staging fields leave this step.
+ * empty cells and distinguish the three right-aligned money columns. Pages
+ * without a heading row reuse the statement anchors and may fall back to
+ * their own geometry. Output is one row per genuine transaction; narration
+ * wrapping and page furniture are resolved here so downstream parsing stays
+ * deterministic.
  */
 async function extractSpatialTables(
   bytes: Uint8Array,
@@ -134,24 +365,22 @@ async function extractSpatialTables(
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
       const rows = positionedRows(content.items);
-      const anchors: ColumnAnchors | null = anchorsFromRows(rows) ?? statementAnchors;
-      if (!anchors) continue;
-      statementAnchors ??= anchors;
+      await page.cleanup();
 
-      const dateRowIndex = rows.findIndex((row) => row.items.some((item) => {
-        const parsed = parseDateCell(item.text);
-        return parsed.ok && near(item.x, anchors.txnDate, anchors.valueDate);
-      }));
-      if (dateRowIndex < 0) continue;
-
-      const tableRows = [[
-        "Transaction Date", "Narration", "Reference", "Value Date",
-        "Withdrawal Amount", "Deposit Amount", "Closing Balance",
-      ]];
-      for (const row of rows.slice(dateRowIndex)) {
-        tableRows.push(rowToCells(row, anchors));
+      let anchors = anchorsFromRows(rows);
+      anchors ??= statementAnchors;
+      let tableRows = anchors ? reconstructTransactionRows(rows, anchors) : [];
+      if (tableRows.length <= 1 && (anchors === statementAnchors || anchors === null)) {
+        const geometryAnchors = anchorsFromGeometry(rows);
+        if (geometryAnchors) {
+          const retry = reconstructTransactionRows(rows, geometryAnchors);
+          if (retry.length > tableRows.length) tableRows = retry;
+        }
       }
-      extracted.push({ pageNumber, rows: tableRows });
+      if (anchors) statementAnchors ??= anchors;
+      if (tableRows.length > 1) {
+        extracted.push({ pageNumber, rows: tableRows });
+      }
     }
     await document.destroy();
     return extracted;
@@ -279,7 +508,15 @@ export async function extractPdfText(
     let tables: PageTable[] = [];
     try {
       tables = await extractSpatialTables(bytes, options.password, maxPages);
-    } catch {
+    } catch (error) {
+      // A PDF.js runtime failure keeps text-based parsing as the fallback.
+      // Code defects are programming errors and must surface instead of
+      // silently degrading every statement to the unpositioned path.
+      const name = error instanceof Error ? error.name : "";
+      const rethrowable = new Set([
+        "ReferenceError", "TypeError", "RangeError", "SyntaxError", "EvalError", "InternalError",
+      ]);
+      if (rethrowable.has(name)) throw error;
       tables = [];
     }
     if (tables.length === 0) {

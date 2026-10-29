@@ -204,6 +204,51 @@ async function run(): Promise<void> {
   assert.ok(wrapped.lines[1].flags.includes("MISSING_AMOUNT"));
   ok("pdf: wrapped narration attaches once and a dated no-amount row stays for review");
 
+  // ── Second statement format: explicit 0.00 placeholders, lead narration
+  //    printed above the amount row, a URL inside a narration row and a
+  //    compact `TO :` metadata period. Synthetic print of the same conventions
+  //    the real second statement uses; no customer content.
+  const bStylePdf = makeTextPdf([
+    "DEMO BANK",
+    "Statement From : 01/04/26 TO : 20/10/26",
+    "Opening Balance: 100,000.00",
+    "Date\tNarration\tChq./Ref.No.\tValue Dt\tWithdrawal Amt.\tDeposit Amt.\tClosing Balance",
+    "\tSYNTHETIC LEAD NARRATION ABOVE THE ROW",
+    "15/10/2026\tSYNTHETIC SHOPPING PAYMENT WWW.MAKE.COM\t0000610103695621\t15/10/2026\t0.00\t50,000.00\t150,000.00",
+    "18/10/2026\tSYNTHETIC BILL PAYMENT\t610103695622\t18/10/2026\t4,500.00\t0.00\t145,500.00",
+    "19/10/2026\tSYNTHETIC PLACEHOLDER ROW\t\t19/10/2026\t0.00\t0.00\t145,500.00",
+    "Closing Balance: 145,500.00",
+  ]);
+  const parsedBStyle = await parseBankStatementPdf(bStylePdf);
+  assert.equal(parsedBStyle.statementFrom, "2026-04-01");
+  assert.equal(parsedBStyle.statementTo, "2026-10-20");
+  assert.equal(parsedBStyle.lines.length, 3, "the URL narration row must not end the page");
+  assert.equal(
+    parsedBStyle.lines[0].narration,
+    "SYNTHETIC LEAD NARRATION ABOVE THE ROW SYNTHETIC SHOPPING PAYMENT WWW.MAKE.COM",
+  );
+  assert.equal(parsedBStyle.lines[0].reference, "0000610103695621");
+  assert.equal(parsedBStyle.lines[0].withdrawalAmount, null, "0.00 beside a real amount is a placeholder");
+  assert.equal(parsedBStyle.lines[0].depositAmount, "50000.00");
+  assert.equal(parsedBStyle.lines[0].closingBalance, "150000.00");
+  assert.equal(parsedBStyle.lines[0].direction, "deposit");
+  assert.equal(parsedBStyle.lines[0].status, "ready");
+  assert.equal(parsedBStyle.lines[1].withdrawalAmount, "4500.00");
+  assert.equal(parsedBStyle.lines[1].depositAmount, null);
+  assert.equal(parsedBStyle.lines[1].direction, "withdrawal");
+  assert.equal(parsedBStyle.lines[1].reference, "610103695622");
+  assert.equal(parsedBStyle.lines[1].status, "ready");
+  assert.equal(parsedBStyle.lines[2].withdrawalAmount, null);
+  assert.equal(parsedBStyle.lines[2].depositAmount, null);
+  assert.equal(parsedBStyle.lines[2].status, "pending");
+  assert.ok(parsedBStyle.lines[2].flags.includes("MISSING_AMOUNT"));
+  for (const line of parsedBStyle.lines) {
+    assert.ok(!line.flags.includes("ZERO_AMOUNT"), "0.00 beside a valid amount must not flag ZERO_AMOUNT");
+    assert.ok(!line.flags.includes("BALANCE_MISMATCH"), "the synthetic closing chain verifies");
+  }
+  assert.equal(parsedBStyle.lines.filter((line) => line.status === "ready").length, 2);
+  ok("pdf: 0.00 placeholder columns, lead-above narration and URL narration rows parse honestly");
+
   const hdfcFooterPdf = makePagedTextPdf(
     Array.from({ length: 4 }, (_, index) => {
       const day = 13 + index * 2;

@@ -32,13 +32,14 @@ import {
   listInvoiceOptionsAction,
   markLineDuplicateAction,
   markLineReadyAction,
+  markLinesDuplicateAction,
   reopenLineAction,
   restoreImportAction,
   skipLineAction,
   updateLineReviewAction,
 } from "@/app/bank-connections/actions";
 import type { ImportBatchResult, ImportInvoiceOption } from "@/lib/bank-import/import";
-import type { ReviewResult } from "@/lib/bank-import/review";
+import type { BulkDuplicateResult, ReviewResult } from "@/lib/bank-import/review";
 import {
   BLOCKING_LINE_FLAGS,
   CLASSIFICATIONS,
@@ -106,6 +107,21 @@ function isFlagged(line: StatementLineRow): boolean {
   return effectiveFlags(line).some((flag) => BLOCKING_LINE_FLAGS.has(flag));
 }
 
+/** A row is importable while staged, or again after its transaction was deleted. */
+function isImportSelectable(line: StatementLineRow, importable: boolean): boolean {
+  if (!importable) return false;
+  return line.status === "ready" || (line.status === "imported" && line.importLive === false);
+}
+
+/**
+ * A row the reviewer can turn into a duplicate decision with the bulk
+ * action: the same gate as the row editor's "Mark duplicate" button.
+ */
+function isDuplicateSelectable(line: StatementLineRow, editable: boolean): boolean {
+  if (!editable) return false;
+  return line.status === "pending" || line.status === "ready";
+}
+
 function amountCell(value: string | null) {
   if (!value) return <span className="text-muted-foreground">—</span>;
   return <span className="font-mono">{formatINR(Number(value), { decimals: 2 })}</span>;
@@ -143,6 +159,10 @@ export function ReviewTable({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [importStage, setImportStage] = useState<"idle" | "confirm" | "running">("idle");
   const [importResult, setImportResult] = useState<ImportBatchResult | null>(null);
+  // Bulk duplicate shares the checkboxes with the import; the two confirm
+  // flows stay mutually exclusive so one selection is never acted on twice.
+  const [duplicateStage, setDuplicateStage] = useState<"idle" | "confirm" | "running">("idle");
+  const [duplicateResult, setDuplicateResult] = useState<BulkDuplicateResult | null>(null);
   const [invoiceOptions, setInvoiceOptions] = useState<Record<string, ImportInvoiceOption[]>>({});
   const [creatingClient, setCreatingClient] = useState(false);
   const [newClientDialog, setNewClientDialog] = useState<{ lineId: string; name: string } | null>(null);
@@ -174,15 +194,35 @@ export function ReviewTable({
     return lines.filter((line) => line.status === filter);
   }, [lines, filter, duplicatesByLine]);
 
-  /** A row is importable while staged, or again after its transaction was deleted. */
   function isSelectable(line: StatementLineRow): boolean {
-    if (!importable) return false;
-    return line.status === "ready" || (line.status === "imported" && line.importLive === false);
+    return isImportSelectable(line, importable) || isDuplicateSelectable(line, editable);
   }
 
   const selectableVisible = visibleLines.filter(isSelectable);
   const allVisibleSelected =
     selectableVisible.length > 0 && selectableVisible.every((line) => selectedIds.has(line.id));
+
+  const lineById = useMemo(() => new Map(lines.map((line) => [line.id, line])), [lines]);
+
+  /** The importable subset of the selection: what "Import selected" acts on. */
+  const selectedImportIds = useMemo(
+    () =>
+      [...selectedIds].filter((id) => {
+        const line = lineById.get(id);
+        return line ? isImportSelectable(line, importable) : false;
+      }),
+    [selectedIds, lineById, importable],
+  );
+
+  /** The review-editable subset of the selection: what "Duplicate" acts on. */
+  const selectedDuplicateIds = useMemo(
+    () =>
+      [...selectedIds].filter((id) => {
+        const line = lineById.get(id);
+        return line ? isDuplicateSelectable(line, editable) : false;
+      }),
+    [selectedIds, lineById, editable],
+  );
 
   function toggleLine(lineId: string, checked: boolean) {
     setSelectedIds((current) => {
@@ -205,8 +245,15 @@ export function ReviewTable({
   }
 
   function startImport() {
-    if (selectedIds.size === 0) return;
+    if (selectedImportIds.length === 0) return;
+    setDuplicateStage("idle");
     setImportStage("confirm");
+  }
+
+  function startDuplicate() {
+    if (selectedDuplicateIds.length === 0) return;
+    setImportStage("idle");
+    setDuplicateStage("confirm");
   }
 
   function cancelImport() {
@@ -214,9 +261,14 @@ export function ReviewTable({
     setImportStage("idle");
   }
 
+  function cancelDuplicate() {
+    if (duplicateStage === "running") return;
+    setDuplicateStage("idle");
+  }
+
   function runImport() {
     if (importStage === "running") return;
-    const lineIds = [...selectedIds];
+    const lineIds = selectedImportIds;
     if (lineIds.length === 0) return;
     setImportStage("running");
     startTransition(async () => {
@@ -253,6 +305,55 @@ export function ReviewTable({
       if (result.error) toast.error(result.error);
       closeEditor();
     });
+  }
+
+  function runDuplicate() {
+    if (duplicateStage === "running") return;
+    const lineIds = selectedDuplicateIds;
+    if (lineIds.length === 0) return;
+    setDuplicateStage("running");
+    startTransition(async () => {
+      let result: BulkDuplicateResult;
+      try {
+        result = await markLinesDuplicateAction(statementId, lineIds);
+      } catch {
+        result = {
+          ok: false,
+          error: "The duplicate marking could not start. Refresh and try again.",
+          requested: lineIds.length,
+          marked: 0,
+          alreadyDuplicate: 0,
+          failed: lineIds.length,
+          statementStatus: null,
+          failures: [],
+        };
+      }
+      setDuplicateResult(result);
+      setDuplicateStage("idle");
+      // Marked rows leave the selection; row blockers stay for a retry.
+      setSelectedIds(
+        new Set(result.failures.map((entry) => entry.lineId).filter((id) => lineIds.includes(id))),
+      );
+      if (result.ok) {
+        if (result.marked > 0) {
+          toast.success(
+            `Marked ${result.marked} row${result.marked === 1 ? "" : "s"} as duplicate.` +
+              (result.alreadyDuplicate > 0
+                ? ` ${result.alreadyDuplicate} were already duplicates.`
+                : "") +
+              (result.failed > 0 ? ` ${result.failed} could not be changed.` : ""),
+          );
+        } else if (result.alreadyDuplicate === result.requested) {
+          toast.info("Every selected row was already marked as duplicate.");
+        }
+      }
+      if (result.error) toast.error(result.error);
+      closeEditor();
+    });
+  }
+
+  function dismissDuplicateResult() {
+    setDuplicateResult(null);
   }
 
   function dismissImportResult() {
@@ -412,6 +513,7 @@ export function ReviewTable({
   const categoryItems = [{ value: "", label: "No category chosen" }, ...options.categories];
 
   const selectedCount = selectedIds.size;
+  const batchBusy = importStage !== "idle" || duplicateStage !== "idle";
   const replacements = importResult?.results.some((entry) => entry.ok && entry.replacement) ?? false;
 
   return (
@@ -436,8 +538,9 @@ export function ReviewTable({
           {importStage === "confirm" ? (
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-body-sm">
-                Import {selectedCount} row{selectedCount === 1 ? "" : "s"} into the ledger as
-                confirmed transactions?
+                Import {selectedImportIds.length} row
+                {selectedImportIds.length === 1 ? "" : "s"} into the ledger as confirmed
+                transactions?
               </p>
               <div className="flex gap-2">
                 <Button type="button" size="sm" onClick={runImport}>
@@ -448,31 +551,67 @@ export function ReviewTable({
                 </Button>
               </div>
             </div>
+          ) : duplicateStage === "confirm" ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-body-sm">
+                Mark {selectedDuplicateIds.length} row
+                {selectedDuplicateIds.length === 1 ? "" : "s"} as duplicate?
+              </p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={runDuplicate}>
+                  Mark as duplicate
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={cancelDuplicate}>
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-caption text-muted-foreground">
+                Marked rows are excluded from the import.
+              </p>
+            </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 size="sm"
                 onClick={startImport}
-                disabled={selectedCount === 0 || importStage === "running"}
+                disabled={selectedImportIds.length === 0 || batchBusy}
               >
                 {importStage === "running" ? <Loader2 className="size-4 animate-spin" /> : null}
                 {importStage === "running"
-                  ? `Importing ${selectedCount} row${selectedCount === 1 ? "" : "s"}…`
-                  : `Import selected${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+                  ? `Importing ${selectedImportIds.length} row${selectedImportIds.length === 1 ? "" : "s"}…`
+                  : `Import selected${selectedImportIds.length > 0 ? ` (${selectedImportIds.length})` : ""}`}
               </Button>
+              {editable ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={startDuplicate}
+                  disabled={selectedDuplicateIds.length === 0 || batchBusy}
+                >
+                  {duplicateStage === "running" ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {duplicateStage === "running"
+                    ? `Marking ${selectedDuplicateIds.length} rows…`
+                    : `Duplicate${selectedDuplicateIds.length > 0 ? ` (${selectedDuplicateIds.length})` : ""}`}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
-                onClick={() => setSelectedIds(new Set())}
-                disabled={selectedCount === 0 || importStage === "running"}
+                onClick={() => {
+                  setImportStage("idle");
+                  setDuplicateStage("idle");
+                  setSelectedIds(new Set());
+                }}
+                disabled={selectedCount === 0 || batchBusy}
               >
                 Clear selection
               </Button>
               <p className="text-caption text-muted-foreground">
-                Ready rows import as income or expense; rows whose transaction was deleted can be
-                re-imported.
+                Ready rows import as income or expense; pending rows can be bulk-marked as
+                duplicates; rows whose transaction was deleted can be re-imported.
               </p>
             </div>
           )}
@@ -530,6 +669,53 @@ export function ReviewTable({
         </div>
       ) : null}
 
+      {duplicateResult ? (
+        <div
+          className={`rounded-lg border px-4 py-3 ${
+            duplicateResult.failed > 0 || !duplicateResult.ok
+              ? "border-warning/40 bg-warning/10"
+              : "border-success/40 bg-success/10"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1 text-body-sm">
+              <p className="font-medium">
+                {duplicateResult.ok
+                  ? `Marked ${duplicateResult.marked} of ${duplicateResult.requested} selected row${duplicateResult.requested === 1 ? "" : "s"} as duplicate.`
+                  : duplicateResult.error}
+              </p>
+              {duplicateResult.ok && duplicateResult.alreadyDuplicate > 0 ? (
+                <p className="text-caption text-muted-foreground">
+                  {duplicateResult.alreadyDuplicate} row
+                  {duplicateResult.alreadyDuplicate === 1 ? " was" : "s were"} already marked as
+                  duplicate.
+                </p>
+              ) : null}
+              {duplicateResult.ok &&
+              duplicateResult.marked > 0 &&
+              duplicateResult.alreadyDuplicate === 0 ? (
+                <p className="text-caption text-muted-foreground">
+                  Marked rows are excluded from the import; Reopen brings them back.
+                </p>
+              ) : null}
+              {duplicateResult.failures.length > 0 ? (
+                <ul className="space-y-0.5 text-caption text-destructive">
+                  {duplicateResult.failures.map((entry) => (
+                    <li key={entry.lineId}>
+                      {entry.rowNumber > 0 ? `Row ${entry.rowNumber}` : "Selected row"}:{" "}
+                      {entry.error}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+            <Button type="button" size="sm" variant="ghost" onClick={dismissDuplicateResult}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-1.5">
         {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
           <Button
@@ -553,9 +739,9 @@ export function ReviewTable({
               {importable ? (
                 <TableHead className="w-10 pl-4">
                   <Checkbox
-                    aria-label="Select all importable rows on this page"
+                    aria-label="Select all selectable rows on this page"
                     checked={allVisibleSelected}
-                    disabled={selectableVisible.length === 0 || importStage === "running"}
+                    disabled={selectableVisible.length === 0 || batchBusy}
                     onCheckedChange={(checked) => toggleAllVisible(checked === true)}
                   />
                 </TableHead>
@@ -611,9 +797,9 @@ export function ReviewTable({
                           </span>
                         ) : (
                           <Checkbox
-                            aria-label={`Select row ${line.rowNumber} for import`}
+                            aria-label={`Select row ${line.rowNumber}`}
                             checked={selectedIds.has(line.id)}
-                            disabled={!selectable || importStage === "running"}
+                            disabled={!selectable || batchBusy}
                             onCheckedChange={(checked) => toggleLine(line.id, checked === true)}
                           />
                         )}
@@ -755,7 +941,7 @@ export function ReviewTable({
                           variant="outline"
                           className="h-7 px-2.5 text-caption"
                           onClick={() => restoreRow(line)}
-                          disabled={Boolean(busyKey) || importStage === "running"}
+                          disabled={Boolean(busyKey) || batchBusy}
                         >
                           {busyKey === `${line.id}:restore` ? (
                             <Loader2 className="size-3.5 animate-spin" />

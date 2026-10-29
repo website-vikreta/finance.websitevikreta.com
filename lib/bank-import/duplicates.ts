@@ -3,12 +3,21 @@
  *
  * - Reads `transactions` for candidate matches but NEVER modifies them; a
  *   candidate is a warning the reviewer decides on, not a proof.
- * - Uses the existing canonical fingerprint (content hash) for staging-level
- *   matches, plus date/direction/amount and normalized narration for
- *   transaction-level matches.
+ * - Staging-level matches come in two passes:
+ *   1. exact content fingerprint (same file row, another file, or an
+ *      already-imported line from Phase 4) — as before;
+ *   2. canonical reference + transaction date + signed amount + direction,
+ *      restricted to the same bank account, for rows the bank prints
+ *      differently across statements (case, separators, zero padding) so an
+ *      overlapping period cannot hide behind formatting. Different signed
+ *      amounts, a different direction for the same magnitude (e.g. a printed
+ *      reversal next to the credit it cancels), and zero-amount placeholder
+ *      rows never match.
+ * - Transaction-level matches use type/direction/amount and normalized
+ *   narration as before.
  * - No unique constraint on the fingerprint: identical bank entries are legal,
  *   so matching stays advisory.
- * - Safe labels only; statement narration is never logged.
+ * - Safe labels only; statement narration and reference values are never logged.
  */
 
 import { eq, inArray } from "drizzle-orm";
@@ -16,7 +25,13 @@ import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { bankStatementLines, bankStatements } from "@/lib/db/schema";
 import type { StatementDetail } from "./queries";
-import { normalizeNarration } from "./normalize";
+import {
+  canonicalReferenceKey,
+  decimalAdd,
+  decimalCompare,
+  decimalNegate,
+  normalizeNarration,
+} from "./normalize";
 
 export type DuplicateKind =
   | "same_statement_row"
@@ -58,6 +73,73 @@ interface StagingMatchRaw {
   fingerprint: string;
 }
 
+/**
+ * Rows fetched for the canonical-reference pass: same shape as the fingerprint
+ * pass plus the printed reference. Only used in memory; never logged.
+ */
+interface CanonicalStagingMatchRaw {
+  id: string;
+  statementId: string;
+  fileName: string;
+  status: string;
+  transactionId: string | null;
+  txnDate: string | null;
+  withdrawalAmount: string | null;
+  depositAmount: string | null;
+  reference: string | null;
+}
+
+/** The ideal shape of any staging row (detail line or fetched match). */
+interface StagingRowLike {
+  txnDate: string | null;
+  withdrawalAmount: string | null;
+  depositAmount: string | null;
+  reference: string | null;
+}
+
+const KEY_SEPARATOR = "\u0000";
+
+/**
+ * Match key for the canonical staging pass. Two rows are candidates exactly
+ * when their keys are equal non-null strings. The key is null whenever any
+ * component is missing or the signed movement is zero: a placeholder row
+ * (0.00 in the shown column with nothing in the other) carries no amount to
+ * compare, and a row without reference or transaction date must not be treated
+ * as a duplicate of another under-formatted row purely because both lack data.
+ *
+ * Movement per column: a withdrawal moves money out (negated), a deposit
+ * moves money in. With direction being part of the key, only rows printed in
+ * the same direction can match; a printed reversal keeps its own key even
+ * when it shares reference, date and magnitude with the entry it cancels.
+ */
+export function stagingCanonicalMatchKey(row: StagingRowLike): string | null {
+  const referenceKey = canonicalReferenceKey(row.reference);
+  if (!referenceKey || !row.txnDate) return null;
+
+  const withdrawal = row.withdrawalAmount;
+  const deposit = row.depositAmount;
+  if (withdrawal !== null && deposit !== null) return null; // ambiguous both-columns row
+  let movement: string;
+  if (withdrawal !== null) {
+    movement = decimalNegate(withdrawal);
+  } else if (deposit !== null) {
+    movement = deposit;
+  } else {
+    return null; // no amount on either printed column
+  }
+  if (decimalCompare(movement, "0.00") === 0) return null;
+  const direction = withdrawal !== null ? "withdrawal" : "deposit";
+  // A second normalize pass canonicalizes the movement string (padding,
+  // "-0.00" → "0.00") so string equality inside the key stays an exact
+  // minor-unit comparison.
+  return [
+    referenceKey,
+    row.txnDate,
+    direction,
+    decimalAdd(movement, "0.00"),
+  ].join(KEY_SEPARATOR);
+}
+
 interface TransactionMatchRaw {
   lineId: string;
   transactionId: string;
@@ -87,7 +169,8 @@ function narrationMatches(narration: string | null, label: string): boolean {
 
 /**
  * Collects duplicate candidates for every line of one statement.
- * Staging-level matches use the content fingerprint; transaction-level
+ * Staging-level matches use the exact content fingerprint plus the canonical
+ * reference pass (same account, folding print differences); transaction-level
  * matches use type/direction, exact amount (INR), and the parsed date.
  */
 export async function findDuplicateCandidates(
@@ -96,6 +179,9 @@ export async function findDuplicateCandidates(
   const statementId = detail.statement.id;
   const byLine: Record<string, LineDuplicateCandidate[]> = {};
   const fingerprints = [...new Set(detail.lines.map((line) => line.fingerprint))];
+  // Staging pairs already covered by an exact-fingerprint candidate; the
+  // canonical pass skips them so one matched pair never yields two cards.
+  const fingerprintPairs = new Set<string>();
 
   // 1. Staging lines sharing a fingerprint (same file row, another file, or an
   //    already-imported line from Phase 4).
@@ -120,6 +206,7 @@ export async function findDuplicateCandidates(
       for (const line of detail.lines) {
         if (line.fingerprint !== match.fingerprint) continue;
         if (match.id === line.id) continue;
+        fingerprintPairs.add(`${match.id}\u0000${line.id}`);
         if (match.statementId === statementId) {
           push(byLine, line.id, {
             kind: "same_statement_row",
@@ -141,6 +228,88 @@ export async function findDuplicateCandidates(
             kind: "other_statement_row",
             severity: "strong",
             label: `The same row is already staged in ${match.fileName}.`,
+            when: match.txnDate,
+            amount: match.withdrawalAmount ?? match.depositAmount,
+          });
+        }
+      }
+    }
+  }
+
+  // 1b. Canonical-reference pass: the same bank entry printed differently in
+  //     another statement (case, separators, zero-padded reference) never
+  //     shares a fingerprint. Restricted to the same bank account, and keyed
+  //     by canonical reference + date + signed amount + direction. The query
+  //     only narrows candidate rows by identity columns SQL can compare
+  //     exactly; the canonical fold runs here so SQL and review never
+  //     disagree about what a "same reference" is.
+  {
+    const canonicalMatches = (await db
+      .select({
+        id: bankStatementLines.id,
+        statementId: bankStatementLines.statementId,
+        fileName: bankStatements.fileName,
+        status: bankStatementLines.status,
+        transactionId: bankStatementLines.transactionId,
+        txnDate: bankStatementLines.txnDate,
+        withdrawalAmount: bankStatementLines.withdrawalAmount,
+        depositAmount: bankStatementLines.depositAmount,
+        reference: bankStatementLines.reference,
+      })
+      .from(bankStatementLines)
+      .innerJoin(bankStatements, eq(bankStatements.id, bankStatementLines.statementId))
+      .where(sql`(
+            ${bankStatements.accountId} = ${detail.statement.accountId}::uuid
+            AND ${bankStatementLines.reference} IS NOT NULL
+            AND ${bankStatementLines.txnDate} IS NOT NULL
+            AND ${bankStatementLines.txnDate} IN (
+              SELECT other.txn_date FROM bank_statement_lines other
+              WHERE other.statement_id = ${statementId}::uuid
+                AND other.txn_date IS NOT NULL
+            )
+          )`)) as CanonicalStagingMatchRaw[];
+
+    // Group detail lines by their canonical match key so each fetched row is
+    // compared against candidate lines with one map lookup.
+    const linesByKey = new Map<string, string[]>();
+    for (const line of detail.lines) {
+      const key = stagingCanonicalMatchKey(line);
+      if (!key) continue;
+      const ids = linesByKey.get(key) ?? [];
+      ids.push(line.id);
+      linesByKey.set(key, ids);
+    }
+
+    for (const match of canonicalMatches) {
+      const matchKey = stagingCanonicalMatchKey(match);
+      if (!matchKey) continue;
+      const lineIds = linesByKey.get(matchKey) ?? [];
+      for (const lineId of lineIds) {
+        if (match.id === lineId) continue;
+        if (fingerprintPairs.has(`${match.id}\u0000${lineId}`)) continue;
+        const matchedLine = detail.lines.find((line) => line.id === lineId);
+        if (!matchedLine) continue;
+        if (match.statementId === statementId) {
+          push(byLine, lineId, {
+            kind: "same_statement_row",
+            severity: "strong",
+            label: "Another row in this statement has the same reference, date, amount and direction.",
+            when: matchedLine.txnDate,
+            amount: matchedLine.withdrawalAmount ?? matchedLine.depositAmount,
+          });
+        } else if (match.transactionId) {
+          push(byLine, lineId, {
+            kind: "imported_before",
+            severity: "strong",
+            label: `A row with the same reference, date, amount and direction was already imported from ${match.fileName}.`,
+            when: match.txnDate,
+            amount: match.withdrawalAmount ?? match.depositAmount,
+          });
+        } else {
+          push(byLine, lineId, {
+            kind: "other_statement_row",
+            severity: "strong",
+            label: `A row with the same reference, date, amount and direction is already staged in ${match.fileName}.`,
             when: match.txnDate,
             amount: match.withdrawalAmount ?? match.depositAmount,
           });

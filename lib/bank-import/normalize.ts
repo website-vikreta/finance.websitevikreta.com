@@ -68,6 +68,27 @@ export function normalizeReference(value: string | null | undefined): string | n
   return normalized.slice(0, 120);
 }
 
+/**
+ * Canonical reference key for duplicate comparison. Folds only cosmetic
+ * printing differences between statements: case, separator characters and
+ * leading zeros. Zero handling is deliberately narrow — only a run of `0`
+ * characters at the start of the reference is stripped (a reference is never
+ * emptied by the fold), interior zeros stay, so real references never merge
+ * through the fold. A reference that is nothing but separators or is only
+ * zeros is a printed placeholder, not a key, and folds to null so placeholder
+ * rows can never participate in the canonical match.
+ */
+export function canonicalReferenceKey(value: string | null | undefined): string | null {
+  const normalized = normalizeReference(value);
+  if (!normalized) return null;
+  let folded = normalized
+    .toLowerCase()
+    .replace(/[ \t\u00a0\-.\/_–—]+/g, "");
+  if (!folded || /^0+$/.test(folded)) return null;
+  folded = folded.replace(/^0+(?=\S)/, "");
+  return folded;
+}
+
 export function isIsoDate(value: string | null | undefined): value is string {
   return typeof value === "string" && ISO_DATE_RE.test(value);
 }
@@ -203,6 +224,11 @@ function fromMinorUnits(value: bigint): string {
 /** Exact decimal string arithmetic scaled to two places. Never uses floats. */
 export function decimalAdd(left: string, right: string): string {
   return fromMinorUnits(toMinorUnits(left) + toMinorUnits(right));
+}
+
+/** Exact sign flip of a canonical decimal string. Never converts through Number. */
+export function decimalNegate(value: string): string {
+  return fromMinorUnits(-toMinorUnits(value));
 }
 
 export function decimalSubtract(left: string, right: string): string {

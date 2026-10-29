@@ -47,9 +47,11 @@ export interface StatementReconciliation {
   errorCount: number;
   /** pending + error: rows the reviewer has not resolved yet. */
   unresolvedCount: number;
-  /** Rows whose amounts cannot be counted; they block a balance check. */
+  /** Rows whose amounts cannot be counted; they reduce what stays countable. */
   invalidLineCount: number;
   warnings: string[];
+  /** Non-error notes, e.g. which value was reconstructed from row balances. */
+  notes: string[];
   overlappingStatements: StatementOverlap[];
 }
 
@@ -132,6 +134,59 @@ function sum(all: string[], seed: string): string {
   return all.reduce((total, value) => decimalAdd(total, value), seed);
 }
 
+interface BalanceChainRow {
+  pageNumber: number;
+  rowNumber: number;
+  withdrawalAmount: string | null;
+  depositAmount: string | null;
+  closingBalance: string | null;
+}
+
+/**
+ * Reconstructs an opening / closing balance from the per-row printed balances
+ * when the statement metadata has none of its own:
+ *
+ * - Opening: the statement's FIRST row only, when it carries a printed
+ *   balance and a countable movement — `opening = balance − (deposit −
+ *   withdrawal)`. A later row would only know its own before-row balance,
+ *   which is not the statement opening.
+ * - Closing: the last row that carries a printed balance, declared by the
+ *   statement itself on every row.
+ *
+ * Only used for display and the balance check — nothing is written back, so
+ * rows keep their source of truth and staged statements benefit without a
+ * re-upload.
+ */
+export function deriveBalancesFromRows(
+  lines: BalanceChainRow[],
+): { opening: string | null; closing: string | null } {
+  const sorted = [...lines].sort(
+    (a, b) => a.pageNumber - b.pageNumber || a.rowNumber - b.rowNumber,
+  );
+
+  let opening: string | null = null;
+  const first = sorted[0];
+  if (first && first.closingBalance) {
+    const amount = countableAmount(first);
+    if (amount) {
+      opening =
+        amount.side === "deposit"
+          ? decimalSubtract(first.closingBalance, amount.value)
+          : decimalAdd(first.closingBalance, amount.value);
+    }
+  }
+
+  let closing: string | null = null;
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    if (sorted[index].closingBalance) {
+      closing = sorted[index].closingBalance;
+      break;
+    }
+  }
+
+  return { opening, closing };
+}
+
 /** Builds the review summary: arithmetic plus row counts and warnings. */
 export function reconcileStatementDetail(
   detail: StatementDetail,
@@ -159,10 +214,25 @@ export function reconcileStatementDetail(
   const depositsTotal = sum(deposits, "0.00");
   const withdrawalsTotal = sum(withdrawals, "0.00");
 
+  // Declared state first; the row balance chain only fills what is missing.
+  const derivedBalances =
+    statement.openingBalance && statement.closingBalance
+      ? { opening: null, closing: null }
+      : deriveBalancesFromRows(lines);
+  const openingBalance = statement.openingBalance ?? derivedBalances.opening;
+  const closingBalance = statement.closingBalance ?? derivedBalances.closing;
+
   const warnings: string[] = [];
+  const notes: string[] = [];
   if (parsedCount === 0) warnings.push("No rows were parsed from this statement.");
-  if (!statement.openingBalance) warnings.push("The opening balance is missing.");
-  if (!statement.closingBalance) warnings.push("The closing balance is missing.");
+  if (openingBalance && !statement.openingBalance) {
+    notes.push("Opening balance derived from the first row's printed balance.");
+  }
+  if (closingBalance && !statement.closingBalance) {
+    notes.push("Declared closing taken from the last row's printed balance.");
+  }
+  if (!openingBalance) warnings.push("The opening balance is missing.");
+  if (!closingBalance) warnings.push("The closing balance is missing.");
   if (invalidLineCount > 0) {
     warnings.push(
       `${invalidLineCount} row${invalidLineCount === 1 ? "" : "s"} cannot be counted; they are excluded from the balance check.`,
@@ -184,20 +254,16 @@ export function reconcileStatementDetail(
     );
   }
 
-  const missingInputs =
-    !statement.openingBalance ||
-    !statement.closingBalance ||
-    invalidLineCount > 0 ||
-    parsedCount === 0;
+  const missingInputs = !openingBalance || !closingBalance || parsedCount === 0;
 
   let status: ReconciliationStatus = "insufficient_data";
   let expectedClosing: string | null = null;
   let difference: string | null = null;
 
-  if (statement.openingBalance && statement.closingBalance && !missingInputs) {
+  if (openingBalance && closingBalance && !missingInputs) {
     const movement = decimalSubtract(depositsTotal, withdrawalsTotal);
-    expectedClosing = decimalAdd(statement.openingBalance, movement);
-    difference = decimalSubtract(statement.closingBalance, expectedClosing);
+    expectedClosing = decimalAdd(openingBalance, movement);
+    difference = decimalSubtract(closingBalance, expectedClosing);
     status = decimalCompare(difference, "0.00") === 0 ? "balanced" : "unbalanced";
     if (status === "unbalanced") {
       warnings.push(
@@ -210,8 +276,8 @@ export function reconcileStatementDetail(
     status,
     difference,
     expectedClosing,
-    openingBalance: statement.openingBalance,
-    closingBalance: statement.closingBalance,
+    openingBalance,
+    closingBalance,
     depositsTotal,
     withdrawalsTotal,
     parsedCount,
@@ -224,6 +290,7 @@ export function reconcileStatementDetail(
     unresolvedCount,
     invalidLineCount,
     warnings,
+    notes,
     overlappingStatements,
   };
 }
