@@ -107,6 +107,17 @@ export function ReconciliationCard({
           ) : null}
         </div>
 
+        {reconciliation.notes.length > 0 ? (
+          <ul className="mt-2 space-y-1 text-body-sm text-muted-foreground">
+            {reconciliation.notes.map((note) => (
+              <li key={note} className="flex items-start gap-2">
+                <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                <span>{note}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
         {reconciliation.warnings.length > 0 ? (
           <ul className="mt-4 space-y-1.5 text-body-sm text-muted-foreground">
             {reconciliation.warnings.map((warning) => (

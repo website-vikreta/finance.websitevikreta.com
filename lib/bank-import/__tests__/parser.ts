@@ -177,7 +177,8 @@ function statement(...rows: string[]): string {
   assert.equal(both.depositAmount, "200.00");
   assert.equal(both.status, "pending");
 
-  assert.ok(zero.flags.includes("ZERO_AMOUNT"));
+  assert.ok(zero.flags.includes("MISSING_AMOUNT"));
+  assert.ok(!zero.flags.includes("ZERO_AMOUNT"), "a zero in one column is the statement's blank placeholder");
   assert.equal(zero.status, "pending");
 
   assert.ok(badAmount.flags.includes("INVALID_AMOUNT"));
