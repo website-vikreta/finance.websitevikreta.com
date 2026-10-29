@@ -28,6 +28,8 @@ import {
 import {
   markLineDuplicate,
   markLineReady,
+  markLinesDuplicate,
+  type BulkDuplicateResult,
   reopenLine,
   skipLine,
   updateLineReview,
@@ -141,6 +143,39 @@ export async function reopenLineAction(
   if (!guard.ok) return guard.result;
 
   const result = await reopenLine(guard.userId, statementId, lineId);
+  if (result.ok) refresh();
+  return result;
+}
+
+const BULK_DUPLICATE_DENIED = (error: string): BulkDuplicateResult => ({
+  ok: false,
+  error,
+  requested: 0,
+  marked: 0,
+  alreadyDuplicate: 0,
+  failed: 0,
+  statementStatus: null,
+  failures: [],
+});
+
+/**
+ * Marks the selected rows as duplicates in one pass (bulk "Duplicate" button).
+ * Lines commit together in one transaction; per-row blockers come back as
+ * counted failures so the rest of the batch still lands.
+ */
+export async function markLinesDuplicateAction(
+  statementId: string,
+  lineIds: unknown,
+): Promise<BulkDuplicateResult> {
+  const guard = await guardReview();
+  if (!guard.ok) {
+    if (guard.result.ok) {
+      return BULK_DUPLICATE_DENIED("You do not have access to bank imports.");
+    }
+    return BULK_DUPLICATE_DENIED(guard.result.error);
+  }
+
+  const result = await markLinesDuplicate(guard.userId, statementId, lineIds);
   if (result.ok) refresh();
   return result;
 }

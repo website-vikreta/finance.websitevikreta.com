@@ -127,7 +127,7 @@ function tablePage(): { pageNumber: number; text: string; tables: string[][] }[]
     [
       CANONICAL_HEADER,
       row("32/13/26", "BROKEN DATE ROW", "", "04/06/26", "700.00", "", "144,265.00"),
-      row("14/06/26", "OFFICE SUPPLIES", "", "14/06/26", "500.00", "", "144,465.00"),
+      row("14/06/26", "OFFICE SUPPLIES", "", "14/06/26", "500.00", "", "143,765.00"),
     ].join("\n"),
   );
   const [, withdrawal] = parsed.lines;

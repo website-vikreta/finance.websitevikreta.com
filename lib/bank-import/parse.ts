@@ -3,6 +3,9 @@ import {
 } from "./classify";
 import {
   collapseWhitespace,
+  decimalAdd,
+  decimalCompare,
+  decimalSubtract,
   detectStatementCurrency,
   fingerprintLine,
   isEmptyAmountPlaceholder,
@@ -247,6 +250,86 @@ function parseColumnAmount(
   return parsed.value;
 }
 
+/**
+ * Reads both source amount columns of a row under the statement's convention:
+ * the unused column is blank (printed empty), a dash/explicit `0.00`
+ * placeholder, or it carries the money. An explicit zero next to a valid
+ * amount is the same placeholder as a blank cell — it never hides the real
+ * transaction or surprises the review flags. Only when both columns are
+ * empty/zero does the row miss an amount. Both columns carrying nonzero
+ * values stays an unresolved `BOTH_AMOUNTS` case; negatives keep their source
+ * sign and column.
+ */
+interface TwoColumnAmounts {
+  withdrawalAmount: string | null;
+  depositAmount: string | null;
+  direction: Direction | null;
+}
+
+function applyTwoAmountColumns(
+  withdrawalRaw: string,
+  depositRaw: string,
+  flags: LineFlag[],
+): TwoColumnAmounts {
+  const hasWithdrawalText = !isEmptyAmountPlaceholder(withdrawalRaw);
+  const hasDepositText = !isEmptyAmountPlaceholder(depositRaw);
+  const parsedWithdrawal = hasWithdrawalText ? parseAmountCell(withdrawalRaw) : null;
+  const parsedDeposit = hasDepositText ? parseAmountCell(depositRaw) : null;
+
+  // Parse errors must surface even when the other column holds the money.
+  if (parsedWithdrawal && !parsedWithdrawal.ok) {
+    addFlag(flags, "INVALID_AMOUNT");
+  }
+  if (parsedDeposit && !parsedDeposit.ok) {
+    addFlag(flags, "INVALID_AMOUNT");
+  }
+
+  const withdrawalNonZero =
+    parsedWithdrawal !== null &&
+    parsedWithdrawal.ok &&
+    parsedWithdrawal.value !== "0.00";
+  const depositNonZero =
+    parsedDeposit !== null &&
+    parsedDeposit.ok &&
+    parsedDeposit.value !== "0.00";
+
+  if (withdrawalNonZero && depositNonZero) {
+    // Both source columns carry money; direction is unresolved evidence.
+    addFlag(flags, "BOTH_AMOUNTS");
+    return {
+      withdrawalAmount: parseColumnAmount(withdrawalRaw, "withdrawal", flags),
+      depositAmount: parseColumnAmount(depositRaw, "deposit", flags),
+      direction: null,
+    };
+  }
+
+  if (withdrawalNonZero !== depositNonZero) {
+    // The explicit zero / dash / blank in the unused column is a placeholder.
+    const side = withdrawalNonZero ? "withdrawal" : "deposit";
+    const parsed = withdrawalNonZero ? parsedWithdrawal : parsedDeposit;
+    if (!parsed || !parsed.ok) {
+      // Unreachable: a non-zero column parsed successfully above. Keep the
+      // row amount-free rather than trusting the flag order.
+      return { withdrawalAmount: null, depositAmount: null, direction: null };
+    }
+    if (parsed.negative) addFlag(flags, "NEGATIVE_AMOUNT");
+    if (
+      (side === "withdrawal" && parsed.indicator === "cr") ||
+      (side === "deposit" && parsed.indicator === "dr")
+    ) {
+      addFlag(flags, "DIRECTION_CONFLICT");
+    }
+    return {
+      withdrawalAmount: withdrawalNonZero ? parsed.value : null,
+      depositAmount: depositNonZero ? parsed.value : null,
+      direction: withdrawalNonZero ? "withdrawal" : "deposit",
+    };
+  }
+
+  // Both blank/zero, or unusable text: no amount is invented from source data.
+  return { withdrawalAmount: null, depositAmount: null, direction: null };
+}
+
 function parseDirectionCell(raw: string | null): Direction | null {
   if (!raw) return null;
   const key = headerKey(raw);
@@ -292,6 +375,46 @@ function clearResolvedDateFlags(lines: ParsedLine[]): void {
   if (!dayFirstProven) return;
   for (const line of lines) {
     removeFlags(line.flags, ["AMBIGUOUS_DATE", "TWO_DIGIT_YEAR"]);
+  }
+}
+
+/**
+ * Verifies consecutive closing balances with the signed statement equation
+ * `closing[i] = closing[i-1] - withdrawal + deposit` as an independent check.
+ * Only genuinely printed balances and amounts participate; a missing balance
+ * or a missing amount never invents the other field. A negative withdrawal
+ * value increases the balance under the same equation. A mismatch is flagged
+ * on the affected row as statement-level evidence for review, in line with
+ * the existing advisory reconciliation policy — it never derives or replaces
+ * an amount.
+ */
+function markRowBalanceChainBreaks(lines: ParsedLine[]): void {
+  let previousClosing: string | null = null;
+  for (const line of lines) {
+    if (line.closingBalance === null) continue;
+    const closing = parseBalance(line.closingBalance, []);
+    if (!closing) {
+      previousClosing = null;
+      continue;
+    }
+    const withdrawalOk = line.withdrawalAmount !== null && parseAmountCell(line.withdrawalAmount).ok;
+    const depositOk = line.depositAmount !== null && parseAmountCell(line.depositAmount).ok;
+    if (withdrawalOk && depositOk) {
+      // Row carries both source amounts; one movement cannot be proven.
+      previousClosing = closing;
+      continue;
+    }
+    if (previousClosing && (withdrawalOk || depositOk)) {
+      // Signed movement: closing[i] = closing[i-1] - withdrawal + deposit.
+      const calculated = decimalAdd(
+        decimalSubtract(previousClosing, line.withdrawalAmount ?? "0.00"),
+        line.depositAmount ?? "0.00",
+      );
+      if (decimalCompare(calculated, closing) !== 0) {
+        addFlag(line.flags, "BALANCE_MISMATCH");
+      }
+    }
+    previousClosing = closing;
   }
 }
 
@@ -518,17 +641,11 @@ function parseRow(
   if (!aligned) {
     addFlag(flags, "MISSING_AMOUNT");
   } else if (hasTwoAmountColumns) {
-    withdrawalAmount = parseColumnAmount(withdrawalRaw, "withdrawal", flags);
-    depositAmount = parseColumnAmount(depositRaw, "deposit", flags);
-
-    if (withdrawalAmount !== null && depositAmount !== null) {
-      // Both source amount columns carry a value, so direction is unresolved.
-      addFlag(flags, "BOTH_AMOUNTS");
-    } else if (withdrawalAmount !== null) {
-      direction = "withdrawal";
-    } else if (depositAmount !== null) {
-      direction = "deposit";
-    } else {
+    const amounts = applyTwoAmountColumns(withdrawalRaw, depositRaw, flags);
+    withdrawalAmount = amounts.withdrawalAmount;
+    depositAmount = amounts.depositAmount;
+    direction = amounts.direction;
+    if (withdrawalAmount === null && depositAmount === null) {
       addFlag(flags, "MISSING_AMOUNT");
     }
   } else if (singleRaw && !isEmptyAmountPlaceholder(singleRaw)) {
@@ -607,17 +724,6 @@ function detectTableHeader(cells: string[]): TableHeader | null {
   return { cells, fields, index };
 }
 
-function parseTableAmount(
-  raw: string | null | undefined,
-  side: Direction,
-  flags: LineFlag[],
-): string | null {
-  if (!raw) return null;
-  const trimmed = collapseWhitespace(raw);
-  if (!trimmed || isEmptyAmountPlaceholder(trimmed)) return null;
-  return parseColumnAmount(trimmed, side, flags);
-}
-
 function parseTableRow(
   cells: string[],
   header: TableHeader,
@@ -660,18 +766,13 @@ function parseTableRow(
     header.index.has("withdrawal") || header.index.has("deposit");
 
   if (hasTwoAmountColumns) {
-    withdrawalAmount = parseTableAmount(get("withdrawal"), "withdrawal", flags);
-    depositAmount = parseTableAmount(get("deposit"), "deposit", flags);
-
-    if (withdrawalAmount !== null && depositAmount !== null) {
-      // Both source amount columns carry values, so direction cannot be
-      // chosen from one source side. Keep both values for review.
-      addFlag(flags, "BOTH_AMOUNTS");
-    } else if (withdrawalAmount !== null) {
-      direction = "withdrawal";
-    } else if (depositAmount !== null) {
-      direction = "deposit";
-    } else {
+    const withdrawalRaw = tableCellAt(header, "withdrawal", cells);
+    const depositRaw = tableCellAt(header, "deposit", cells);
+    const amounts = applyTwoAmountColumns(withdrawalRaw, depositRaw, flags);
+    withdrawalAmount = amounts.withdrawalAmount;
+    depositAmount = amounts.depositAmount;
+    direction = amounts.direction;
+    if (withdrawalAmount === null && depositAmount === null) {
       addFlag(flags, "MISSING_AMOUNT");
     }
   } else {
@@ -769,6 +870,8 @@ function parseTableData(table: PageTable, pageNumber: number): ParsedLine[] {
   let rowNumber = 0;
   let lastLine: ParsedLine | null = null;
   let footerStarted = false;
+  // Narration printed above a transaction's amount row (this bank's layout).
+  let pendingLead: Array<{ narration: string | null; reference: string | null }> = [];
 
   for (const cells of table.rows) {
     if (cells.length === 0) continue;
@@ -778,6 +881,7 @@ function parseTableData(table: PageTable, pageNumber: number): ParsedLine[] {
     if (detected) {
       header = detected;
       lastLine = null;
+      pendingLead = [];
       footerStarted = false;
       continue;
     }
@@ -803,7 +907,11 @@ function parseTableData(table: PageTable, pageNumber: number): ParsedLine[] {
       !hasTransactionDate &&
       (isSummaryLine(rowText) || isMetadataLine(rowText) || isFooterLine(rowText))
     ) {
-      if (isSummaryLine(rowText) || isFooterLine(rowText)) footerStarted = true;
+      // Statement furniture clears the table state. Narration text that
+      // merely contains a URL ("WWW.MAKE.COM" inside a card statement) is
+      // real transaction narration here — it must never end the page, so
+      // only whole-furniture wording may raise the footer state.
+      if (isSummaryLine(rowText) || hasStatementFooterMarker(rowText)) footerStarted = true;
       continue;
     }
 
@@ -814,9 +922,11 @@ function parseTableData(table: PageTable, pageNumber: number): ParsedLine[] {
 
     // A wrapped row's continuation has an empty date cell and no amounts.
     // Its text/reference joins the transaction it follows on the same page;
-    // it never becomes a transaction of its own. When the association is
-    // uncertain (amounts present, or the first line is not a real
-    // transaction), the row is kept as a flagged review row instead.
+    // it never becomes a transaction of its own. When no transaction has been
+    // seen yet on the page, the text is buffered: this bank prints the lead
+    // narration above the amount row, and the buffer is merged into the next
+    // genuine transaction instead of producing a phantom row. When the next
+    // row does not arrive, the buffer is kept as a flagged review row.
     if (
       hasAmountColumns &&
       !hasTransactionDate &&
@@ -829,16 +939,78 @@ function parseTableData(table: PageTable, pageNumber: number): ParsedLine[] {
         mergeTableContinuation(lastLine, header, cells);
         continue;
       }
+      const narrationAddition = normalizeNarration(narrationCell || "");
+      const referenceAddition = normalizeReference(referenceCell || null);
+      if (narrationAddition) {
+        pendingLead = [...pendingLead, { narration: narrationAddition, reference: referenceAddition }];
+      }
+      continue;
     }
 
     rowNumber += 1;
-    const parsed = parseTableRow(cells, header, pageNumber, rowNumber);
+    let parsed = parseTableRow(cells, header, pageNumber, rowNumber);
+    if (pendingLead.length > 0 && parsed.txnDate) {
+      parsed = mergeLeadIntoLine(parsed, pendingLead);
+      pendingLead = [];
+    }
     lines.push(parsed);
     lastLine = parsed;
     if (hasStatementFooterMarker(rowText)) footerStarted = true;
   }
 
+  // A pre-transaction lead without a following transaction is source content:
+  // it is kept for reviewer inspection instead of being silently dropped.
+  for (const lead of pendingLead) {
+    rowNumber += 1;
+    lines.push(
+      finalizeLine({
+        pageNumber,
+        rowNumber,
+        txnDate: null,
+        valueDate: null,
+        narration: lead.narration,
+        reference: lead.reference,
+        businessDescription: "",
+        withdrawalAmount: null,
+        depositAmount: null,
+        closingBalance: null,
+        direction: null,
+        classification: "unclassified",
+        status: "pending",
+        fingerprint: "",
+        flags: ["MISSING_DATE", "UNRECOGNIZED_ROW", "MISSING_AMOUNT"],
+        errorCode: null,
+      }),
+    );
+  }
+
   return lines;
+}
+
+/**
+ * Joins buffered lead narration into the transaction it introduces. Text
+ * fields only; amounts, dates and balances keep their parsed values, and the
+ * merged line is re-validated so status stays truthful.
+ */
+function mergeLeadIntoLine(line: ParsedLine, leads: Array<{ narration: string | null; reference: string | null }>): ParsedLine {
+  const narrationText = leads
+    .map((lead) => lead.narration)
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  const referenceLead = leads.find((lead) => lead.reference && !line.reference)?.reference ?? null;
+  line.narration = narrationText
+    ? line.narration
+      ? `${narrationText} ${line.narration}`
+      : narrationText
+    : line.narration;
+  if (referenceLead) line.reference = referenceLead;
+  const updated = finalizeLine(line);
+  return {
+    ...line,
+    ...updated,
+    pageNumber: line.pageNumber,
+    rowNumber: line.rowNumber,
+  };
 }
 
 /** Whether every amount slot of a table row is empty or a placeholder. */
@@ -878,7 +1050,8 @@ function mergeTableContinuation(
   line.businessDescription = updated.businessDescription;
 }
 
-function isSummaryLine(line: string): boolean {
+/** Statement furniture: page numbers, totals, "computer generated" lines. */
+export function isSummaryLine(line: string): boolean {
   const key = collapseWhitespace(line).toLowerCase();
   const compact = compactStatementText(key);
   if (/^pageno(?:\d+(?:of\d+)?)?$/.test(compact)) return true;
@@ -887,7 +1060,8 @@ function isSummaryLine(line: string): boolean {
   );
 }
 
-function isMetadataLine(line: string): boolean {
+/** Statement furniture: headings, summaries, bank shell rows (never narration). */
+export function isMetadataLine(line: string): boolean {
   const key = collapseWhitespace(line).toLowerCase();
   const compact = compactStatementText(key);
   if (compact.startsWith("stateaccountbranchgstn")) return true;
@@ -904,6 +1078,7 @@ const STATEMENT_FOOTER_MARKERS = [
   "stateaccountbranchgstn",
   "hdfcbankgstinnumberdetailsareavailableat",
   "registeredofficeaddresshdfcbankhouse",
+  "generationdate",
 ] as const;
 
 function compactStatementText(value: string): string {
@@ -1019,8 +1194,8 @@ function parseStatementMetadata(text: string): StatementMetadata {
   const header = text.split(/\r?\n/).slice(0, 60).join("\n");
   const amount = "(-?\\d[\\d,]*(?:\\.\\d{1,2})?)";
 
-  const period =
-    /(?:statement\s+(?:period|from)|period|from)\s*[:\-]?\s*(\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}[\s/-]+[A-Za-z]{3,9}[\s/-]+\d{2,4})\s*(?:to|till|through|-)\s*(\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}[\s/-]+[A-Za-z]{3,9}[\s/-]+\d{2,4})/i.exec(
+const period =
+    /(?:statement\s+(?:period|from)|period|from)\s*[:\-]?\s*(\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}[\s/-]+[A-Za-z]{3,9}[\s/-]+\d{2,4})\s*(?:to|till|through|-|:)\s*[:\-]?\s*(\d{1,2}\s*[/.-]\s*\d{1,2}\s*[/.-]\s*\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}[\s/-]+[A-Za-z]{3,9}[\s/-]+\d{2,4})/i.exec(
       header,
     );
   const from = period ? parseDateCell(period[1]) : null;
@@ -1227,6 +1402,7 @@ export function parseStatementText(
   // columns stay flagged for review. Status is re-based on the resolved
   // flags afterwards, so proven dates never hold a row in stale `pending`.
   clearResolvedDateFlags(lines);
+  markRowBalanceChainBreaks(lines);
   for (const line of lines) finalizeLine(line);
 
   const transactionDates = lines

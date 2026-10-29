@@ -6,13 +6,52 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AddBankAccountForm } from "@/components/bank-import/add-bank-account-form";
 import { UploadStatementForm } from "@/components/bank-import/add-statement-form";
 import { StatementList } from "@/components/bank-import/statement-list";
+import { BankConnectionsEntry } from "@/components/bank-import/section-entry";
 import { bankImportLimits } from "@/lib/bank-import/limits";
-import { listBankAccounts, listStatements } from "@/lib/bank-import/queries";
+import {
+  type StatementSummary,
+  listBankAccounts,
+  listStatements,
+} from "@/lib/bank-import/queries";
 
 export const metadata = { title: "Bank connections" };
 
-async function BankConnectionsData() {
-  const [accounts, statements] = await Promise.all([listBankAccounts(), listStatements()]);
+export default function BankConnectionsPage({ searchParams }: PageProps<"/bank-connections">) {
+  return (
+    <AppShell>
+      <PageHeader title="Bank connections" />
+      <Suspense fallback={<Skeleton className="h-[38rem] rounded-xl" />}>
+        <BankConnectionsBody searchParams={searchParams} />
+      </Suspense>
+    </AppShell>
+  );
+}
+
+async function BankConnectionsBody({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const statements = await listStatements();
+
+  // The section reopens wherever the reviewer last was (a list visit or one
+  // specific statement review, remembered per browser). `?list=1` — the
+  // review page's back link — forces the list instead.
+  return (
+    <BankConnectionsEntry
+      statementIds={statements.map((statement) => statement.id)}
+      resume={params.list !== "1"}
+    >
+      <Suspense fallback={<Skeleton className="h-[34rem] rounded-xl" />}>
+        <BankConnectionsData statements={statements} />
+      </Suspense>
+    </BankConnectionsEntry>
+  );
+}
+
+async function BankConnectionsData({ statements }: { statements: StatementSummary[] }) {
+  const accounts = await listBankAccounts();
   const limits = bankImportLimits();
 
   if (accounts.length === 0 && statements.length === 0) {
@@ -107,16 +146,5 @@ async function BankConnectionsData() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-export default function BankConnectionsPage() {
-  return (
-    <AppShell>
-      <PageHeader title="Bank connections" />
-      <Suspense fallback={<Skeleton className="h-[38rem] rounded-xl" />}>
-        <BankConnectionsData />
-      </Suspense>
-    </AppShell>
   );
 }

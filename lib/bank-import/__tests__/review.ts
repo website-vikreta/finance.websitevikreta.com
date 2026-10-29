@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import {
+  bulkDuplicateDecision,
   effectiveLineFlags,
   evaluateLineEligibility,
   mappingForClassification,
@@ -400,25 +401,103 @@ function detailFixture(
   ok("reconciliation: paise arithmetic stays exact (no float drift)");
 
   const noClosing = reconcileStatementDetail(
-    detailFixture([lineRow({ depositAmount: "100.00" })], { closingBalance: null }),
+    detailFixture([lineRow({ depositAmount: "100.00", closingBalance: null })], {
+      closingBalance: null,
+    }),
     [],
   );
   assert.equal(noClosing.status, "insufficient_data");
   assert.equal(noClosing.difference, null);
   assert.ok(noClosing.warnings.some((warning) => warning.includes("closing balance is missing")));
-  ok("reconciliation: a missing closing balance is insufficient data");
+  ok("reconciliation: a closing balance no row can supply is insufficient data");
+
+  const derived = reconcileStatementDetail(
+    detailFixture(
+      [
+        lineRow({ id: UUID_B, pageNumber: 1, rowNumber: 2, withdrawalAmount: "3000.00", depositAmount: null, direction: "withdrawal", closingBalance: "8000.00" }),
+        lineRow({ id: UUID_A, pageNumber: 1, rowNumber: 1, depositAmount: "1000.00", closingBalance: "11000.00" }),
+      ],
+      { openingBalance: null, closingBalance: null },
+    ),
+    [],
+  );
+  assert.equal(derived.status, "balanced");
+  assert.equal(derived.openingBalance, "10000.00");
+  assert.equal(derived.closingBalance, "8000.00");
+  assert.equal(derived.difference, "0.00");
+  assert.ok(derived.notes.some((note) => note.includes("Opening balance derived")));
+  assert.ok(derived.notes.some((note) => note.includes("Declared closing")));
+  assert.ok(!derived.warnings.some((warning) => warning.includes("opening balance is missing")));
+  ok("reconciliation: row balances reconstruct a missing opening and closing");
+
+  const partialDerive = reconcileStatementDetail(
+    detailFixture(
+      [lineRow({ depositAmount: "500.00", closingBalance: "5500.00", status: "ready" })],
+      { openingBalance: "5000.00", closingBalance: null },
+    ),
+    [],
+  );
+  assert.equal(partialDerive.closingBalance, "5500.00");
+  assert.equal(partialDerive.status, "balanced");
+  assert.ok(partialDerive.notes.some((note) => note.includes("Declared closing")));
+  ok("reconciliation: derivation fills only the side the statement left empty");
+
+  const firstRowBroken = reconcileStatementDetail(
+    detailFixture(
+      [
+        lineRow({
+          pageNumber: 1,
+          rowNumber: 1,
+          withdrawalAmount: "100.00",
+          depositAmount: "100.00",
+          closingBalance: "9000.00",
+        }),
+        lineRow({ id: UUID_B, pageNumber: 1, rowNumber: 2, depositAmount: "1000.00", closingBalance: "11000.00" }),
+      ],
+      { openingBalance: null, closingBalance: null },
+    ),
+    [],
+  );
+  assert.equal(firstRowBroken.openingBalance, null);
+  assert.equal(firstRowBroken.closingBalance, "11000.00");
+  assert.equal(firstRowBroken.status, "insufficient_data");
+  assert.ok(firstRowBroken.warnings.some((warning) => warning.includes("opening balance is missing")));
+  assert.ok(!firstRowBroken.notes.some((note) => note.includes("Opening balance derived")));
+  ok("reconciliation: an uncountable first row cannot anchor the opening balance");
 
   const invalid = reconcileStatementDetail(
-    detailFixture([
-      lineRow({ withdrawalAmount: "100.00", depositAmount: "100.00" }),
-      lineRow({ id: UUID_B, rowNumber: 2, depositAmount: null, withdrawalAmount: null }),
-    ]),
+    detailFixture(
+      [
+        lineRow({ withdrawalAmount: "100.00", depositAmount: "100.00", closingBalance: null }),
+        lineRow({
+          id: UUID_B,
+          rowNumber: 2,
+          depositAmount: null,
+          withdrawalAmount: null,
+          closingBalance: null,
+        }),
+      ],
+      { closingBalance: null },
+    ),
     [],
   );
   assert.equal(invalid.status, "insufficient_data");
   assert.equal(invalid.invalidLineCount, 2);
   assert.ok(invalid.warnings.some((warning) => warning.includes("2 rows cannot be counted")));
-  ok("reconciliation: rows without exactly one valid amount block the check");
+  ok("reconciliation: rows without balances cannot rescue a missing balance chain");
+
+  const partialRows = reconcileStatementDetail(
+    detailFixture([
+      lineRow({ withdrawalAmount: "100.00", depositAmount: "100.00" }),
+      lineRow({ id: UUID_B, rowNumber: 2, depositAmount: null, withdrawalAmount: "0.00", closingBalance: "12000.00" }),
+    ]),
+    [],
+  );
+  assert.equal(partialRows.invalidLineCount, 2);
+  assert.ok(partialRows.warnings.some((warning) => warning.includes("2 rows cannot be counted")));
+  assert.equal(partialRows.status, "unbalanced");
+  assert.equal(partialRows.difference, "3000.00");
+  ok("reconciliation: uncountable rows no longer hide a computable balance check");
 
   const skippedRows = reconcileStatementDetail(
     detailFixture([
@@ -473,6 +552,39 @@ function detailFixture(
   );
   assert.deepEqual(neither, { from: null, to: null });
   ok("period: declared period wins, else row dates, else nothing");
+}
+
+// ── Bulk duplicate policy ────────────────────────────────────────────────────
+{
+  for (const status of ["pending", "ready"] as const) {
+    assert.deepEqual(bulkDuplicateDecision(status, "review"), { action: "mark" });
+  }
+  ok("bulk duplicate: pending and ready rows are marked together");
+
+  assert.deepEqual(bulkDuplicateDecision("duplicate", "review"), { action: "skip" });
+  ok("bulk duplicate: already-duplicate rows are counted, not touched again");
+
+  assert.deepEqual(bulkDuplicateDecision("imported", "review"), {
+    action: "reject",
+    error: "Imported lines can no longer be changed.",
+  });
+  assert.deepEqual(bulkDuplicateDecision("error", "review"), {
+    action: "reject",
+    error: "This line does not parse; review is not available for it.",
+  });
+  assert.deepEqual(bulkDuplicateDecision("skipped", "review"), {
+    action: "reject",
+    error: "Reopen this line before changing the review decision.",
+  });
+  ok("bulk duplicate: imported, error, and skipped rows keep their own review path");
+
+  for (const statementStatus of ["importing", "completed", "failed", "cancelled"]) {
+    assert.deepEqual(bulkDuplicateDecision("ready", statementStatus), {
+      action: "reject",
+      error: "This statement can no longer be reviewed.",
+    });
+  }
+  ok("bulk duplicate: statements outside review reject the whole decision");
 }
 
 console.log(`\nreview: ${passed} checks passed`);

@@ -95,6 +95,7 @@ export const LINE_FLAGS = [
   "UNKNOWN_DIRECTION",
   "DIRECTION_CONFLICT",
   "INVALID_BALANCE",
+  "BALANCE_MISMATCH",
   "COLUMN_COUNT_MISMATCH",
   "UNRECOGNIZED_ROW",
   "TRANSFER",
@@ -231,4 +232,4 @@ export interface PdfExtraction {
   tables: PageTable[];
 }
 
-export const PARSER_VERSION = "1.3.0";
+export const PARSER_VERSION = "1.4.0";

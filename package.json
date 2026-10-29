@@ -27,7 +27,7 @@
     "test:integration": "tsx lib/chatbot/__tests__/chat-integration-e2e.ts",
     "test:persistence": "tsx lib/transactions/__tests__/persistence.test.ts",
     "test:recurring-db": "tsx lib/transactions/__tests__/recurring-db.test.ts",
-    "test:bank-import": "tsx lib/bank-import/__tests__/safe-log.ts && tsx lib/bank-import/__tests__/parser.ts && tsx lib/bank-import/__tests__/pdf.ts && tsx lib/bank-import/__tests__/regression.ts && tsx lib/bank-import/__tests__/business-description.ts && tsx lib/bank-import/__tests__/review.ts && tsx lib/bank-import/__tests__/upload.ts && tsx lib/bank-import/__tests__/import.ts && tsx lib/bank-import/__tests__/review-db.ts && tsx lib/bank-import/__tests__/upload-db.ts && tsx lib/bank-import/__tests__/import-db.ts && tsx lib/bank-import/__tests__/financial-integration-db.ts",
+    "test:bank-import": "tsx lib/bank-import/__tests__/safe-log.ts && tsx lib/bank-import/__tests__/parser.ts && tsx lib/bank-import/__tests__/duplicates.ts && tsx lib/bank-import/__tests__/pdf.ts && tsx lib/bank-import/__tests__/regression.ts && tsx lib/bank-import/__tests__/business-description.ts && tsx lib/bank-import/__tests__/review.ts && tsx lib/bank-import/__tests__/upload.ts && tsx lib/bank-import/__tests__/import.ts && tsx lib/bank-import/__tests__/review-db.ts && tsx lib/bank-import/__tests__/upload-db.ts && tsx lib/bank-import/__tests__/import-db.ts && tsx lib/bank-import/__tests__/financial-integration-db.ts",
     "test:schema": "tsx lib/db/__tests__/schema-verify.ts"
   },
   "dependencies": {

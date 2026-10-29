@@ -21,6 +21,7 @@ import {
   type StatementDetail,
   type Classification,
 } from "@/lib/bank-import/queries";
+import { deriveBalancesFromRows } from "@/lib/bank-import/reconciliation";
 
 const STATUS_BADGE: Record<StatementStatus, string> = {
   review: "border-warning/40 bg-warning/15 text-warning",
@@ -62,6 +63,10 @@ function amount(value: string | null) {
 export function StatementSummaryCard({ detail }: { detail: StatementDetail }) {
   const { statement, account } = detail;
   const flags: LineFlag[] = [...new Set(detail.lines.flatMap((line) => line.flags))];
+  // Declared summary balances first; the printed row balances fill a gap.
+  const derived = deriveBalancesFromRows(detail.lines);
+  const openingBalance = statement.openingBalance ?? derived.opening;
+  const closingBalance = statement.closingBalance ?? derived.closing;
 
   return (
     <Card>
@@ -88,12 +93,16 @@ export function StatementSummaryCard({ detail }: { detail: StatementDetail }) {
       <CardContent className="px-4 pt-0">
         <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-2 text-body-sm sm:grid-cols-3">
           <div>
-            <p className="text-caption text-muted-foreground">Opening balance</p>
-            <p className="font-mono">{formatINR(Number(statement.openingBalance ?? 0), { decimals: 2 })}</p>
+            <p className="text-caption text-muted-foreground">
+              Opening balance{statement.openingBalance ? "" : " (derived)"}
+            </p>
+            <p className="font-mono">{amount(openingBalance)}</p>
           </div>
           <div>
-            <p className="text-caption text-muted-foreground">Closing balance</p>
-            <p className="font-mono">{formatINR(Number(statement.closingBalance ?? 0), { decimals: 2 })}</p>
+            <p className="text-caption text-muted-foreground">
+              Closing balance{statement.closingBalance ? "" : " (derived)"}
+            </p>
+            <p className="font-mono">{amount(closingBalance)}</p>
           </div>
           <div>
             <p className="text-caption text-muted-foreground">Pages</p>
