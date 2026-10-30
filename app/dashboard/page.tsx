@@ -12,7 +12,7 @@ import { percentChange } from "@/lib/format";
 import { expenseBreakdown, incomeBreakdown, listLedger, monthlyTotals, transactionYears, monthlyTotalsForYear } from "@/lib/transactions/queries";
 import { listRecurring } from "@/lib/transactions/recurring";
 import { receivables } from "@/lib/invoices/invoices";
-import { todayInIndia } from "@/lib/transactions/period";
+import { todayInIndia, financialYearStart } from "@/lib/transactions/period";
 
 export const metadata = { title: "Dashboard" };
 
@@ -28,7 +28,7 @@ function change(current: number, previous: number, higherIsBetter: boolean): Pic
 async function DashboardData() {
   await connection(); // upcoming bills are relative to today
   const years = await transactionYears();
-  const latestYear = years[0] ?? new Date().getFullYear();
+  const latestYear = years[0] ?? financialYearStart(todayInIndia());
   const [kpiMonths, chartMonths] = await Promise.all([monthlyTotals(MONTHS), monthlyTotalsForYear(latestYear)]);
   const thisMonth = kpiMonths[kpiMonths.length - 1];
   const lastMonth = kpiMonths[kpiMonths.length - 2];

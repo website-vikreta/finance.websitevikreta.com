@@ -39,7 +39,7 @@ import { toCsv } from "../../transactions/csv";
 import { toReportCsv } from "../../reports/csv";
 import { getInvoice, listInvoices, receivables } from "../../invoices/invoices";
 import { deleteTransaction, restoreTransaction } from "../../transactions/manage";
-import { todayInIndia } from "../../transactions/period";
+import { todayInIndia, financialYearStart } from "../../transactions/period";
 import type { ParsedStatement } from "../types";
 
 const TEST_USER = "admin";
@@ -99,7 +99,7 @@ async function run(): Promise<void> {
   await cleanup();
 
   const today = todayInIndia(); // e.g. "2026-10-23"
-  const currentYear = new Date(`${today}T00:00:00Z`).getUTCFullYear();
+  const currentYear = financialYearStart(today); // monthlyTotalsForYear spans Apr–Mar
   const currentMonthStart = `${today.slice(0, 7)}-01`;
 
   // ── 1. Setup Test Master Data ─────────────────────────────────────────────
@@ -349,7 +349,7 @@ async function run(): Promise<void> {
   assert.equal(postYearCurMonth.income, (baselineYearCurMonth?.income ?? 0) + 1250);
   assert.equal(postYearCurMonth.expense, (baselineYearCurMonth?.expense ?? 0) + 400);
 
-  const range = await rangeSummary(`${currentYear}-01-01`, `${currentYear}-12-31`, null);
+  const range = await rangeSummary(`${currentYear}-04-01`, `${currentYear + 1}-03-31`, null);
   assert.ok(range.income >= 1250 && range.expense >= 400);
   ok("dashboard: yearly totals and range summaries reflect imported transactions");
 

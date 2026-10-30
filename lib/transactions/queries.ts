@@ -258,24 +258,26 @@ export async function incomeBreakdown(from: string): Promise<Breakdown[]> {
   return data.map((r) => ({ name: r.name, amount: Number(r.amount), count: Number(r.count) }));
 }
 
-/** Distinct years (descending) that have at least one non-deleted transaction. */
+/** Distinct financial years (Apr–Mar) that have at least one non-deleted transaction,
+ *  as FY start years, descending. A transaction on 2026-03-31 belongs to FY 2025-26 → 2025. */
 export async function transactionYears(): Promise<number[]> {
-  const data = await rows<{ year: string }>(sql`
-    SELECT DISTINCT extract(year FROM txn_date)::int AS year
+  const data = await rows<{ fy: string }>(sql`
+    SELECT DISTINCT extract(year FROM txn_date - interval '3 months')::int AS fy
     FROM transactions
     WHERE deleted_at IS NULL
-    ORDER BY year DESC
+    ORDER BY fy DESC
   `);
-  return data.map((r) => Number(r.year));
+  return data.map((r) => Number(r.fy));
 }
 
-/** Income/expense per month for all 12 months of `year`, oldest first, zero-filled. */
-export async function monthlyTotalsForYear(year: number): Promise<MonthTotals[]> {
+/** Income/expense per month across financial year Apr ${fyStart} – Mar ${fyStart + 1},
+ *  oldest (April) first, zero-filled. The dropdown keys on the FY start year. */
+export async function monthlyTotalsForYear(fyStart: number): Promise<MonthTotals[]> {
   const data = await rows<{ month: string; income: string; expense: string }>(sql`
     WITH m AS (
       SELECT generate_series(
-        make_date(${year}, 1, 1),
-        make_date(${year}, 12, 1),
+        make_date(${fyStart}, 4, 1),
+        make_date(${fyStart + 1}, 3, 1),
         interval '1 month'
       )::date AS month
     )
