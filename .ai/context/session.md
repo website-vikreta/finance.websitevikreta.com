@@ -4,6 +4,13 @@
 
 ## Current Task
 
+2026-10-30: Analytics page `/analytics` (read-only) (`feat/dashboard-reports-financial-year`, working tree only — not committed per instruction).
+- Sidebar gains "Analytics" (TrendingUp icon) between Clients and Reports; same shell/active state.
+- Structure: period selector (This month / quarter / financial year / Custom) via URL params (`?period=&from=&to=`, same pattern as Reports); 4 KPIs (income/expenses/net profit/margin) with safe growth notes vs the same-length previous window; fixed This Month / This Quarter / This FY comparison cards with previous-window rows; income-vs-expense trend (monthly/quarterly buckets, bars/area) + net-movement line; expense donut (BreakdownDonut); top income clients table; activity tiles (counts, averages, largest in/out).
+- Data: `lib/analytics/range.ts` (pure windows/growth/margin/quarter fold), `lib/analytics/overview.ts` (orchestrates ~5 read queries), `analyticsRangeTotals` multi-window single SQL + `monthlyTotalsBetween` + `transactionExtremes` + optional `to` on the two breakdowns in `lib/transactions/queries.ts` (additive). Read-only; no schema/env/write changes; amounts are normalized `amount_inr` sums.
+- Verified: `test:analytics` 9/9 (windows incl. leap-February & FY edges, growth zero rules incl. the −300% zero-crossing fix, margin null on no income), tsc + ESLint on touched paths clean, `next build` passes. NOT staged/committed/pushed.
+- Known limits: no cash-flow ledger fields (net movement labeled, not "cash flow"); no income-by-category data (income shown by client); reminders/recurring not folded in; DB-backed suites skip offline (TEST_DATABASE_URL).
+
 2026-10-30: Financial-year year dropdowns on /dashboard and /reports (`feat/dashboard-reports-financial-year`, cut from `feat/bank-import-review-ux`).
 - The "Income vs expenses" (dashboard) and "Monthly summary" (reports) year dropdowns now follow the Indian financial year (1 April – 31 March) and stay data-driven: every option keys on the FY START year and prints "2026-27"-style via `financialYearLabel` (`lib/transactions/period.ts`). An entry dated 10-Dec-2024 shows "2024-25"; 12-Apr-2025 shows "2025-26"; 31-Mar closes the old FY before 1-Apr opens the next.
 - Data layer: `transactionYears()` returns the distinct FY start years (`extract(year FROM txn_date - interval '3 months')`, newest first); `monthlyTotalsForYear(fyStart)` spans Apr `Y` → Mar `Y+1` oldest-first, so charts/tables read April → March. `/api/reports/monthly?year=` keeps its 4-digit contract (now the FY start). Fallback when no data: the FY containing today in India. Reports CSV prints the monthly-summary header as "(2026-27)". KPI cards and the rolling-12-month `monthlyTotals` are untouched.
