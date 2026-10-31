@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PERIODS, parsePeriod, periodStart, timeInIndia, todayInIndia, type Period } from "@/lib/transactions/period";
+import { PERIODS, parsePeriod, periodStart, timeInIndia, todayInIndia, financialYearStart, type Period } from "@/lib/transactions/period";
 import { expenseBreakdown, incomeBreakdown, listLedger, transactionYears, monthlyTotalsForYear } from "@/lib/transactions/queries";
 import { ReportsView } from "@/components/reports/reports-view";
 
@@ -13,7 +13,7 @@ async function ReportData({ period }: { period: Period }) {
   await connection(); // periodStart reads the current date, so this runs at request time
   const from = periodStart(period);
   const years = await transactionYears();
-  const latestYear = years[0] ?? new Date().getFullYear();
+  const latestYear = years[0] ?? financialYearStart(todayInIndia());
   const [income, expenses, yearMonths, ledger] = await Promise.all([
     incomeBreakdown(from),
     expenseBreakdown(from),

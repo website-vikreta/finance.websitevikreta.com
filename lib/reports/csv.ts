@@ -1,5 +1,6 @@
 import { formatMonthShort, formatShare, formatTime, formatDate } from "@/lib/format";
 import { SOURCE_LABELS, dateCell } from "@/lib/transactions/csv";
+import { financialYearLabel } from "@/lib/transactions/period";
 import type { Breakdown, LedgerRow, MonthTotals } from "@/lib/transactions/queries";
 
 /** Quote every cell; neutralise leading =,+,-,@ so spreadsheets don't run user text as a formula. */
@@ -86,7 +87,7 @@ export function toReportCsv({
   lines.push("");
 
   // Section 4: Monthly Summary
-  const yearSuffix = selectedYear ? ` (${selectedYear})` : "";
+  const yearSuffix = selectedYear ? ` (${financialYearLabel(selectedYear)})` : "";
   lines.push([`MONTHLY SUMMARY${yearSuffix}`].map(cell).join(","));
   lines.push(["Month", "Income (INR)", "Expenses (INR)", "Net (INR)"].map(cell).join(","));
   if (months.length === 0) {

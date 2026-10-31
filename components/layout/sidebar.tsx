@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Building2, ChevronLeft, ChevronRight, FileText, LayoutDashboard, Receipt, Settings, Users } from "lucide-react";
+import { BarChart3, Building2, ChevronLeft, ChevronRight, FileText, LayoutDashboard, Receipt, Settings, TrendingUp, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
@@ -17,6 +17,7 @@ const navItems = [
   { label: "Transactions", href: "/transactions", icon: Receipt },
   { label: "Invoices", href: "/invoices", icon: FileText },
   { label: "Clients", href: "/clients", icon: Users },
+  { label: "Analytics", href: "/analytics", icon: TrendingUp },
   { label: "Reports", href: "/reports", icon: BarChart3 },
   { label: "Bank connections", href: "/bank-connections", icon: Building2 },
   { label: "Settings", href: "/settings", icon: Settings },
