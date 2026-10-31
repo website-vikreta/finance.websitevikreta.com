@@ -122,8 +122,10 @@ export function AnalyticsView({ data }: { data: AnalyticsData | null }) {
 
   const series = useMemo(() => {
     if (!data) return [];
-    if (grouping === "quarter") return quarterlyBuckets(data.months);
-    return data.months.map((m) => ({ label: `${formatMonthShort(m.month)} ${m.month.slice(0, 4)}`, month: m.month, income: m.income, expense: m.expense }));
+    const base = grouping === "quarter"
+      ? quarterlyBuckets(data.months)
+      : data.months.map((m) => ({ label: `${formatMonthShort(m.month)} ${m.month.slice(0, 4)}`, month: m.month, income: m.income, expense: m.expense }));
+    return base.map((b) => ({ ...b, net: b.income - b.expense }));
   }, [data, grouping]);
 
   const bucketed = grouping === "quarter";
