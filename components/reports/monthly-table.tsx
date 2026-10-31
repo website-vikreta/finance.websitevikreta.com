@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { formatINR, formatMonthShort } from "@/lib/format";
+import { financialYearLabel } from "@/lib/transactions/period";
 import { cn } from "@/lib/utils";
 import type { MonthTotals } from "@/lib/transactions/queries";
 
@@ -48,7 +49,7 @@ export function MonthlyTable({
           onChange={(e) => handleYearChange(Number(e.target.value))}
           className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-caption font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          {years.map((y) => <option key={y} value={y}>{financialYearLabel(y)}</option>)}
         </select>
       </div>
       <div className="overflow-x-auto">

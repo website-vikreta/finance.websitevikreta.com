@@ -49,3 +49,16 @@ export function periodStart(period: Period, now: Date = new Date()): string {
   if (period === "fy") return `${month >= 4 ? year : year - 1}-04-01`;
   return "1900-01-01";
 }
+
+// ─── Financial year (1 April – 31 March, labelled "2026-27") ─────────────────
+
+/** FY start year for a YYYY-MM-DD date: 2026-12-10 → 2026, 2026-03-31 → 2025. */
+export function financialYearStart(date: string): number {
+  const [y, m] = date.split("-").map(Number);
+  return m >= 4 ? y : y - 1;
+}
+
+/** "2026-27" for a fiscal year beginning April 2026 (mirrors lib/invoices/math.ts). */
+export function financialYearLabel(fyStart: number): string {
+  return `${fyStart}-${String((fyStart + 1) % 100).padStart(2, "0")}`;
+}

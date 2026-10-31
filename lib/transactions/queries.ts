@@ -74,6 +74,43 @@ async function rows<T>(query: ReturnType<typeof sql>): Promise<T[]> {
   return result.rows as T[];
 }
 
+export interface RangeBucketTotals {
+  income: number;
+  expense: number;
+  incomeCount: number;
+  expenseCount: number;
+}
+
+/** Reading analytics: income/expense totals per named inclusive YYYY-MM-DD window,
+ *  all windows in ONE round trip (FILTER, no N+1). Deleted rows excluded. */
+export async function analyticsRangeTotals(windows: Record<string, { from: string; to: string }>): Promise<Record<string, RangeBucketTotals>> {
+  const entries = Object.entries(windows);
+  const selections = entries.map(([key, w]) => sql`
+    coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${INCOME} AND t.txn_date BETWEEN ${w.from}::date AND ${w.to}::date), 0) AS ${sql.raw(`income_${key}`)},
+    coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${EXPENSE} AND t.txn_date BETWEEN ${w.from}::date AND ${w.to}::date), 0) AS ${sql.raw(`expense_${key}`)},
+    count(*) FILTER (WHERE t.type_id = ${INCOME} AND t.txn_date BETWEEN ${w.from}::date AND ${w.to}::date) AS ${sql.raw(`income_count_${key}`)},
+    count(*) FILTER (WHERE t.type_id = ${EXPENSE} AND t.txn_date BETWEEN ${w.from}::date AND ${w.to}::date) AS ${sql.raw(`expense_count_${key}`)}
+  `);
+
+  const data = await rows<Record<string, string>>(sql`
+    SELECT ${sql.join(selections, sql`, `)}
+    FROM transactions t
+    WHERE t.deleted_at IS NULL
+  `);
+
+  const row = data[0] ?? {};
+  const out: Record<string, RangeBucketTotals> = {};
+  for (const key of Object.keys(windows)) {
+    out[key] = {
+      income: Number(row[`income_${key}`] ?? 0),
+      expense: Number(row[`expense_${key}`] ?? 0),
+      incomeCount: Number(row[`income_count_${key}`] ?? 0),
+      expenseCount: Number(row[`expense_count_${key}`] ?? 0),
+    };
+  }
+  return out;
+}
+
 export interface DeletedRow extends LedgerRow {
   deletedAt: string;
 }
@@ -231,51 +268,53 @@ export async function clientSummaries(): Promise<ClientSummary[]> {
   });
 }
 
-/** Expenses grouped by category since `from` (YYYY-MM-DD), largest first. */
-export async function expenseBreakdown(from: string): Promise<Breakdown[]> {
+/** Expenses grouped by category since `from` (YYYY-MM-DD), largest first. `to` optionally bounds the end (inclusive). */
+export async function expenseBreakdown(from: string, to?: string | null): Promise<Breakdown[]> {
   const data = await rows<{ name: string; amount: string; count: string }>(sql`
     SELECT coalesce(cat.name, 'Uncategorized') AS name, sum(t.amount_inr) AS amount, count(*) AS count
     FROM transactions t
     LEFT JOIN categories cat ON cat.id = t.category_id
-    WHERE t.deleted_at IS NULL AND t.type_id = ${EXPENSE} AND t.txn_date >= ${from}::date
+    WHERE t.deleted_at IS NULL AND t.type_id = ${EXPENSE} AND t.txn_date >= ${from}::date AND (${to ?? null}::date IS NULL OR t.txn_date <= ${to ?? null}::date)
     GROUP BY 1
     ORDER BY amount DESC
   `);
   return data.map((r) => ({ name: r.name, amount: Number(r.amount), count: Number(r.count) }));
 }
 
-/** Income grouped by client since `from` (YYYY-MM-DD), largest first. */
-export async function incomeBreakdown(from: string): Promise<Breakdown[]> {
+/** Income grouped by client since `from` (YYYY-MM-DD), largest first. `to` optionally bounds the end (inclusive). */
+export async function incomeBreakdown(from: string, to?: string | null): Promise<Breakdown[]> {
   const data = await rows<{ name: string; amount: string; count: string }>(sql`
     SELECT coalesce(c.client_name, t.client_name_snapshot, 'Unknown client') AS name,
            sum(t.amount_inr) AS amount, count(*) AS count
     FROM transactions t
     LEFT JOIN clients c ON c.client_id = t.client_id
-    WHERE t.deleted_at IS NULL AND t.type_id = ${INCOME} AND t.txn_date >= ${from}::date
+    WHERE t.deleted_at IS NULL AND t.type_id = ${INCOME} AND t.txn_date >= ${from}::date AND (${to ?? null}::date IS NULL OR t.txn_date <= ${to ?? null}::date)
     GROUP BY 1
     ORDER BY amount DESC
   `);
   return data.map((r) => ({ name: r.name, amount: Number(r.amount), count: Number(r.count) }));
 }
 
-/** Distinct years (descending) that have at least one non-deleted transaction. */
+/** Distinct financial years (Apr–Mar) that have at least one non-deleted transaction,
+ *  as FY start years, descending. A transaction on 2026-03-31 belongs to FY 2025-26 → 2025. */
 export async function transactionYears(): Promise<number[]> {
-  const data = await rows<{ year: string }>(sql`
-    SELECT DISTINCT extract(year FROM txn_date)::int AS year
+  const data = await rows<{ fy: string }>(sql`
+    SELECT DISTINCT extract(year FROM txn_date - interval '3 months')::int AS fy
     FROM transactions
     WHERE deleted_at IS NULL
-    ORDER BY year DESC
+    ORDER BY fy DESC
   `);
-  return data.map((r) => Number(r.year));
+  return data.map((r) => Number(r.fy));
 }
 
-/** Income/expense per month for all 12 months of `year`, oldest first, zero-filled. */
-export async function monthlyTotalsForYear(year: number): Promise<MonthTotals[]> {
+/** Income/expense per month across financial year Apr ${fyStart} – Mar ${fyStart + 1},
+ *  oldest (April) first, zero-filled. The dropdown keys on the FY start year. */
+export async function monthlyTotalsForYear(fyStart: number): Promise<MonthTotals[]> {
   const data = await rows<{ month: string; income: string; expense: string }>(sql`
     WITH m AS (
       SELECT generate_series(
-        make_date(${year}, 1, 1),
-        make_date(${year}, 12, 1),
+        make_date(${fyStart}, 4, 1),
+        make_date(${fyStart + 1}, 3, 1),
         interval '1 month'
       )::date AS month
     )
@@ -343,5 +382,71 @@ export async function listCategories(): Promise<string[]> {
     return data.map((r) => r.name);
   }
   return [...CATEGORIES];
+}
+
+/** Income/expense per month between `from` and `to` (inclusive), oldest first, zero-filled.
+ *  Months with no data still appear so charts can show flat empty months. */
+export async function monthlyTotalsBetween(from: string, to: string): Promise<MonthTotals[]> {
+  const data = await rows<{ month: string; income: string; expense: string }>(sql`
+    WITH m AS (
+      SELECT generate_series(
+        date_trunc('month', ${from}::date),
+        date_trunc('month', ${to}::date),
+        interval '1 month'
+      )::date AS month
+    )
+    SELECT to_char(m.month, 'YYYY-MM-DD') AS month,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${INCOME}), 0) AS income,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${EXPENSE}), 0) AS expense
+    FROM m
+    LEFT JOIN transactions t
+      ON t.deleted_at IS NULL AND date_trunc('month', t.txn_date)::date = m.month
+    GROUP BY m.month
+    ORDER BY m.month
+  `);
+  return data.map((r) => ({ month: r.month, income: Number(r.income), expense: Number(r.expense) }));
+}
+
+/** The single largest income and expense transaction in a range (read-only analytics). */
+export async function transactionExtremes(from: string, to: string): Promise<{ income: AnalyticsExtreme | null; expense: AnalyticsExtreme | null }> {
+  const data = await rows<{
+    type_id: number;
+    id: string;
+    title: string;
+    txn_date: string;
+    amount_inr: string;
+  }>(sql`
+    (SELECT t.type_id, t.id,
+            CASE WHEN t.type_id = ${INCOME} THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
+                 ELSE coalesce(t.description, 'Expense') END AS title,
+            to_char(t.txn_date, 'YYYY-MM-DD') AS txn_date, t.amount_inr
+     FROM transactions t
+     LEFT JOIN clients c ON c.client_id = t.client_id
+     WHERE t.deleted_at IS NULL AND t.type_id = ${INCOME} AND t.txn_date BETWEEN ${from}::date AND ${to}::date
+     ORDER BY t.amount_inr DESC LIMIT 1)
+    UNION ALL
+    (SELECT t.type_id, t.id,
+            CASE WHEN t.type_id = ${INCOME} THEN coalesce(c.client_name, t.client_name_snapshot, 'Unknown client')
+                 ELSE coalesce(t.description, 'Expense') END AS title,
+            to_char(t.txn_date, 'YYYY-MM-DD') AS txn_date, t.amount_inr
+     FROM transactions t
+     LEFT JOIN clients c ON c.client_id = t.client_id
+     WHERE t.deleted_at IS NULL AND t.type_id = ${EXPENSE} AND t.txn_date BETWEEN ${from}::date AND ${to}::date
+     ORDER BY t.amount_inr DESC LIMIT 1)
+  `);
+
+  const pick = (type: number) => {
+    const found = data.find((r) => r.type_id === type);
+    if (!found) return null;
+    return { id: found.id, title: found.title, date: found.txn_date, amount: Number(found.amount_inr) };
+  };
+  return { income: pick(INCOME), expense: pick(EXPENSE) };
+}
+
+export interface AnalyticsExtreme {
+  id: string;
+  title: string;
+  date: string;
+  amount: number;
 }
 
