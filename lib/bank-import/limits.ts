@@ -3,9 +3,16 @@
  *
  * Limits are configurable with env vars so deployment limits can be tuned
  * without changing code. Malformed values fall back to safe defaults.
+ *
+ * The parser defaults live HERE, not in `lib/bank-import/pdf.ts`: the pages
+ * render with these limits, and `pdf.ts` implies the heavy PDF libraries.
+ * Anything importing limits must never pull the PDF runtime into a page
+ * graph (see "PDF libraries load lazily" in `pdf.ts`).
  */
 
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_PAGES } from "./pdf";
+/** Provisional default, approved 2026-10-23. */
+export const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
+export const DEFAULT_MAX_PAGES = 100;
 
 /** Matches the parser default (`lib/bank-import/parse.ts`). */
 const DEFAULT_MAX_ROWS = 5_000;

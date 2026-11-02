@@ -1,13 +1,9 @@
-import {
-  FormatError,
-  InvalidPDFException,
-  PasswordException,
-  PDFParse,
-} from "pdf-parse";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import type { PDFParse } from "pdf-parse";
+
 import { parseStatementPages } from "./parse";
 import { isMetadataLine, isSummaryLine } from "./parse";
 import { parseAmountCell, parseDateCell } from "./normalize";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_PAGES } from "./limits";
 import {
   BankImportError,
   type PageTable,
@@ -16,8 +12,76 @@ import {
   type PdfExtractionOptions,
 } from "./types";
 
-export const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
-export const DEFAULT_MAX_PAGES = 100;
+/*
+ * PDF libraries load lazily — never import "pdf-parse" or "pdfjs-dist" at
+ * module scope. When an upload actually parses, the runtime resolves them
+ * in one cached load and they stay real Node modules (external to the
+ * bundler, per next.config.ts `serverExternalPackages`).
+ *
+ * Why this is required, not cosmetic: the legacy pdf.mjs evaluates
+ * `new DOMMatrix()` at module top scope and normally polyfills the DOM
+ * canvas globals from the transitive `@napi-rs/canvas`. A normal install
+ * ships that native package, but hosts may resolve the dependency tree
+ * without it (Netlify functions did). Module evaluation then crashed with
+ * `ReferenceError: DOMMatrix is not defined`, which took down every route
+ * whose graph shared the chunk — first seen as the long-running bank
+ * connections deployment failures (2026-10 → 2026-11). Text extraction
+ * never renders a page, so inert globals are enough — they exist purely to
+ * satisfy module evaluation, and they are installed, guarded, only here.
+ */
+
+interface PdfLibrary {
+  getDocument: typeof import("pdfjs-dist/legacy/build/pdf.mjs").getDocument;
+  PDFParse: typeof PDFParse;
+}
+
+/** Installs, only when genuinely missing, inert DOM canvas globals. */
+function installPdfRuntimeGlobals(): void {
+  const scope = globalThis as unknown as {
+    DOMMatrix?: unknown;
+    Path2D?: unknown;
+    ImageData?: unknown;
+  };
+  if (!scope.DOMMatrix) {
+    scope.DOMMatrix = class DOMMatrix {
+      constructor(init?: unknown) {
+        void init;
+      }
+    };
+  }
+  if (!scope.Path2D) {
+    scope.Path2D = class Path2D {
+      addPath(): void {}
+    };
+  }
+  if (!scope.ImageData) {
+    scope.ImageData = class ImageData {};
+  }
+}
+
+let pdfLibraryLoad: Promise<PdfLibrary> | null = null;
+
+/** One shared load for both libraries; resets on failure so a retry retries. */
+async function loadPdfLibrary(): Promise<PdfLibrary> {
+  installPdfRuntimeGlobals();
+  if (!pdfLibraryLoad) {
+    pdfLibraryLoad = Promise.all([
+      import("pdfjs-dist/legacy/build/pdf.mjs"),
+      import("pdf-parse"),
+    ]).then(
+      ([pdfjs, pdfParse]) => ({
+        getDocument: pdfjs.getDocument,
+        PDFParse: pdfParse.PDFParse,
+      }),
+      (error) => {
+        pdfLibraryLoad = null;
+        throw error;
+      },
+    );
+  }
+  return pdfLibraryLoad;
+}
+
 
 type ColumnAnchors = {
   txnDate: number;
@@ -347,6 +411,7 @@ async function extractSpatialTables(
   password: string | undefined,
   maxPages: number,
 ): Promise<PageTable[]> {
+  const { getDocument } = await loadPdfLibrary();
   const task = getDocument({
     data: Uint8Array.from(bytes),
     ...(password ? { password } : {}),
@@ -408,6 +473,9 @@ function asBytes(data: Uint8Array): Uint8Array {
 /**
  * Maps library errors to safe codes. The native message is never returned,
  * because it can contain paths or document fragments.
+ *
+ * The library classes are matched by `error.name` (pdfjs exceptions always
+ * set it), so this mapping stays usable without importing the libraries.
  */
 export function mapPdfError(error: unknown): BankImportError {
   if (error instanceof BankImportError) return error;
@@ -415,19 +483,14 @@ export function mapPdfError(error: unknown): BankImportError {
   const name = error instanceof Error ? error.name : "";
   const message = error instanceof Error ? error.message.toLowerCase() : "";
 
-  if (error instanceof PasswordException || name === "PasswordException") {
+  if (name === "PasswordException") {
     if (/no password|password required|need password|password not (?:given|provided)/.test(message)) {
       return new BankImportError("PASSWORD_REQUIRED", "This PDF needs a password.");
     }
     return new BankImportError("WRONG_PASSWORD", "The PDF password is incorrect.");
   }
 
-  if (
-    error instanceof InvalidPDFException ||
-    error instanceof FormatError ||
-    name === "InvalidPDFException" ||
-    name === "FormatError"
-  ) {
+  if (name === "InvalidPDFException" || name === "FormatError") {
     return new BankImportError("INVALID_PDF", "This file is not a readable PDF.");
   }
 
@@ -461,6 +524,8 @@ export async function extractPdfText(
 
   let parser: PDFParse | null = null;
   try {
+    const { PDFParse } = await loadPdfLibrary();
+
     // pdf-parse transfers the input buffer to its worker. Copy after the size
     // checks so the caller's bytes (for hashing/retry metadata) stay intact.
     const parserBytes = Uint8Array.from(bytes);
