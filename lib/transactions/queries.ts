@@ -307,6 +307,48 @@ export async function transactionYears(): Promise<number[]> {
   return data.map((r) => Number(r.fy));
 }
 
+export interface YearlyAnalyticsTotalsRow {
+  fyStart: number;
+  income: number;
+  expense: number;
+  incomeCount: number;
+  expenseCount: number;
+}
+
+/** Financial-year totals for the Yearly growth section: every FY with non-deleted rows in ONE
+ *  grouped trip (FILTER, same FY rule as transactionYears). Read-only. */
+export async function yearlyAnalyticsTotals(): Promise<YearlyAnalyticsTotalsRow[]> {
+  const data = await rows<Record<string, string>>(sql`
+    SELECT extract(year FROM t.txn_date - interval '3 months')::int AS fy_start,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${INCOME}), 0) AS income,
+           coalesce(sum(t.amount_inr) FILTER (WHERE t.type_id = ${EXPENSE}), 0) AS expense,
+           count(*) FILTER (WHERE t.type_id = ${INCOME}) AS income_count,
+           count(*) FILTER (WHERE t.type_id = ${EXPENSE}) AS expense_count
+    FROM transactions t
+    WHERE t.deleted_at IS NULL
+    GROUP BY 1
+    ORDER BY 1
+  `);
+  return data.map((r) => ({
+    fyStart: Number(r.fy_start),
+    income: Number(r.income),
+    expense: Number(r.expense),
+    incomeCount: Number(r.income_count),
+    expenseCount: Number(r.expense_count),
+  }));
+}
+
+/** YYYY-MM-DD of the most recent non-deleted income entry (whole ledger) — feeds the
+ *  "last money in N days ago" beat of the This year section. Null when no income ever. */
+export async function lastIncomeDate(): Promise<string | null> {
+  const data = await rows<{ d: string | null }>(sql`
+    SELECT max(txn_date)::text AS d
+    FROM transactions
+    WHERE deleted_at IS NULL AND type_id = ${INCOME}
+  `);
+  return data[0]?.d ?? null;
+}
+
 /** Income/expense per month across financial year Apr ${fyStart} – Mar ${fyStart + 1},
  *  oldest (April) first, zero-filled. The dropdown keys on the FY start year. */
 export async function monthlyTotalsForYear(fyStart: number): Promise<MonthTotals[]> {

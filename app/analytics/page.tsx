@@ -4,7 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AnalyticsView } from "@/components/analytics/analytics-view";
-import { getAnalyticsOverview } from "@/lib/analytics/overview";
+import { getAnalyticsOverview, getYearlyGrowth, getThisYear } from "@/lib/analytics/overview";
 import { parseAnalyticsPeriod, type AnalyticsPeriod } from "@/lib/analytics/range";
 
 export const metadata = { title: "Analytics" };
@@ -19,24 +19,31 @@ async function AnalyticsData({ params }: { params: Promise<SearchParams> }) {
   await connection(); // always runs against the current date in India
   const resolved = await params;
   const period: AnalyticsPeriod = parseAnalyticsPeriod(single(resolved.period) ?? "month");
-  const data = await getAnalyticsOverview({
-    period,
-    customFrom: period === "custom" ? single(resolved.from) ?? null : null,
-    customTo: period === "custom" ? single(resolved.to) ?? null : null,
-  });
-  return <AnalyticsView data={data} />;
+  const [data, yearly, thisYear] = await Promise.all([
+    getAnalyticsOverview({
+      period,
+      customFrom: period === "custom" ? single(resolved.from) ?? null : null,
+      customTo: period === "custom" ? single(resolved.to) ?? null : null,
+    }),
+    getYearlyGrowth(),
+    getThisYear(),
+  ]);
+  return <AnalyticsView data={data} yearly={yearly} thisYear={thisYear} />;
 }
 
 function AnalyticsSkeleton() {
   return (
     <div className="space-y-6">
       <Skeleton className="h-9 w-64 rounded-lg" />
+      {/* This year hero band (period tabs are inside the shell) */}
+      <Skeleton className="h-60 rounded-xl" />
       <div className="grid grid-cols-2 gap-6 @4xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}
       </div>
       <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-3">
         {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-64 rounded-xl" />)}
       </div>
+      <Skeleton className="h-80 rounded-xl" />
       <div className="grid grid-cols-1 gap-6 @4xl:grid-cols-5">
         <Skeleton className="h-80 rounded-xl @4xl:col-span-3" />
         <Skeleton className="h-80 rounded-xl @4xl:col-span-2" />
