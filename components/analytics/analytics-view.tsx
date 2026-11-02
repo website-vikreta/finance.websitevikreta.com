@@ -11,6 +11,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,14 +19,19 @@ import {
   type TooltipContentProps,
   type TooltipValueType,
 } from "recharts";
+import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react";
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { BreakdownDonut } from "@/components/dashboard/breakdown-donut";
+import { YearlyGrowth } from "@/components/analytics/yearly-growth";
+import { ThisYear } from "@/components/analytics/this-year";
 import { StatTile } from "@/components/layout/stat-tile";
 import { segmentedItem, segmentedTrack } from "@/components/ui/segmented";
 import { formatDate, formatINR, formatMonthShort, formatShare } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { quarterlyBuckets, growth, profitMargin, ANALYTICS_PERIODS, type AnalyticsPeriod } from "@/lib/analytics/range";
+import { quarterlyBuckets, growth, netProfit, profitMargin, ANALYTICS_PERIODS, type AnalyticsPeriod } from "@/lib/analytics/range";
 import type { AnalyticsData, AnalyticsComparison } from "@/lib/analytics/overview";
+import type { YearlyData } from "@/lib/analytics/yearly";
+import type { ThisYearData } from "@/lib/analytics/this-year";
 
 const SERIES = [
   { key: "income", label: "Income", color: "var(--income)" },
@@ -60,7 +66,7 @@ function AnalyticsTooltip({ active, payload, label }: TooltipContentProps<Toolti
   if (!active || !payload?.length) return null;
   return (
     <div className="w-max rounded-lg border border-border bg-popover px-3 py-2 text-caption shadow-md">
-      <p className="mb-1 font-medium text-foreground">{String(label)}</p>
+      <p className="mb-1 font-medium text-foreground">{tooltipLabel(label)}</p>
       {SERIES.map((s) => {
         const value = payload.find((p) => p.dataKey === s.key)?.value ?? 0;
         return (
@@ -77,35 +83,90 @@ function AnalyticsTooltip({ active, payload, label }: TooltipContentProps<Toolti
   );
 }
 
-/** Fire for the "This Month / Quarter / FY" trio, mirroring the reference layout but in our tokens. */
-function ComparisonCard({ title, comparison }: { title: string; comparison: AnalyticsComparison }) {
-  const profit = comparison.current.income - comparison.current.expense;
-  const prevProfit = comparison.previous.income - comparison.previous.expense;
+/** "2026-10" → "Oct 2026"; quarter labels are already readable. */
+function tooltipLabel(title: string | number | undefined): string {
+  const text = String(title ?? "");
+  return /^\d{4}-\d{2}$/.test(text) ? `${formatMonthShort(text)} ${text.slice(0, 4)}` : text;
+}
+
+/** Tooltip for the net-profit line: the bucket's real figures. A LineChart payload only carries
+ *  `net`, so income/expense context is read from the plotted datum — never rendered as 0. */
+function NetProfitTooltip({ active, payload, label }: TooltipContentProps<TooltipValueType, string | number>) {
+  if (!active || !payload?.length) return null;
+  const bucket = payload[0]?.payload as { income?: number; expense?: number; net?: number } | undefined;
+  if (!bucket) return null;
+  const income = Number(bucket.income ?? 0);
+  const expense = Number(bucket.expense ?? 0);
+  const net = Number(bucket.net ?? netProfit(income, expense));
+  return (
+    <div className="w-max rounded-lg border border-border bg-popover px-3 py-2 text-caption shadow-md">
+      <p className="mb-1 font-medium text-foreground">{tooltipLabel(label)}</p>
+      <p className="flex items-center justify-between gap-6">
+        <span className="flex items-center gap-2 text-foreground">
+          <i className="size-2 rounded-full bg-foreground" aria-hidden />
+          Net profit
+        </span>
+        <span className={cn("font-mono tabular-nums", net < 0 && "text-destructive", net > 0 && "text-success")}>{formatINR(net)}</span>
+      </p>
+      {SERIES.map((s) => {
+        const value = s.key === "income" ? income : expense;
+        return (
+          <p key={s.key} className="flex items-center justify-between gap-6 text-muted-foreground">
+            <span className="flex items-center gap-2">
+              <i className="size-2 rounded-full" style={{ background: s.color }} aria-hidden />
+              {s.label}
+            </span>
+            <span className="font-mono tabular-nums text-foreground">{formatINR(value)}</span>
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Fire for the "This Month / Quarter / FY" trio: same window data, clearer reading —
+ *  period chip in the header, figures one type step up (labels stay muted glosses, ledger
+ *  semantics: money in green, out ink), and the DESIGN.md KPI delta underline badge. */
+function ComparisonCard({ title, label, comparison }: { title: string; label: string; comparison: AnalyticsComparison }) {
+  const profit = netProfit(comparison.current.income, comparison.current.expense);
+  const prevProfit = netProfit(comparison.previous.income, comparison.previous.expense);
   const note = deltaNote(profit, prevProfit, comparison.prevLabel, true);
   const rows = [
     { label: "Income", cur: comparison.current.income, prev: comparison.previous.income },
     { label: "Expenses", cur: comparison.current.expense, prev: comparison.previous.expense },
     { label: "Profit", cur: profit, prev: prevProfit },
   ];
+  const DeltaIcon = note.tone === "good" ? ArrowUpRight : note.tone === "bad" ? ArrowDownRight : ArrowRight;
   return (
-    <section className="rounded-xl border border-border bg-card p-5 transition-colors hover:border-ring/40" aria-label={`${title} comparison`}>
-      <h3 className="text-caption font-semibold text-foreground">{title}</h3>
-      <div className="mt-1 grid grid-cols-3 gap-3 font-mono text-body-sm tabular-nums">
+    <section className="min-w-0 rounded-xl border border-border bg-card p-5 transition-colors hover:border-ring/40" aria-label={`${title} comparison`}>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-title-sm text-foreground">{title}</h3>
+        <span className="shrink-0 rounded-full bg-muted px-2.5 py-1 text-caption text-muted-foreground">{label}</span>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-3 font-mono tabular-nums">
         {rows.map((r) => (
           <div key={r.label} className="min-w-0">
-            <p className={cn("truncate text-body-sm font-medium tabular-nums", r.label === "Profit" && r.cur < 0 ? "text-destructive" : "text-foreground")}>{formatINR(r.cur)}</p>
+            <p className={cn("truncate text-title-sm", r.label === "Income" ? "text-success" : r.label === "Profit" && r.cur < 0 ? "text-destructive" : "text-foreground")}>{formatINR(r.cur)}</p>
             <p className="text-caption text-muted-foreground">{r.label}</p>
           </div>
         ))}
       </div>
-      <p className="mt-3 text-caption text-muted-foreground">{comparison.prevLabel}</p>
-      <div className="mt-0.5 grid grid-cols-3 gap-3 font-mono text-body-sm tabular-nums text-muted-foreground">
+      <p className="mt-4 truncate text-caption text-muted-foreground">{comparison.prevLabel}</p>
+      <div className="mt-0.5 grid grid-cols-3 gap-3">
         {rows.map((r) => (
-          <p key={r.label} className="truncate text-body-sm">{formatINR(r.prev)}</p>
+          <p key={r.label} className="truncate font-mono text-body-sm tabular-nums text-muted-foreground">{formatINR(r.prev)}</p>
         ))}
       </div>
       <div className="mt-4 border-t border-border pt-3">
-        <p className={cn("text-caption tabular-nums", note.tone === "good" && "text-success", note.tone === "bad" && "text-destructive", note.tone === "neutral" && "text-muted-foreground")}>
+        <p
+          className={cn(
+            "inline-flex w-fit items-center gap-1 border-b-2 pb-0.5 text-caption tabular-nums",
+            note.tone === "good" && "border-primary text-success",
+            note.tone === "bad" && "border-destructive text-destructive",
+            note.tone === "neutral" && "border-border text-muted-foreground",
+          )}
+        >
+          <DeltaIcon className="size-3.5" aria-hidden />
           Profit {note.note}
         </p>
       </div>
@@ -113,7 +174,7 @@ function ComparisonCard({ title, comparison }: { title: string; comparison: Anal
   );
 }
 
-export function AnalyticsView({ data }: { data: AnalyticsData | null }) {
+export function AnalyticsView({ data, yearly, thisYear }: { data: AnalyticsData | null; yearly: YearlyData | null; thisYear: ThisYearData | null }) {
   const router = useRouter();
   const [grouping, setGrouping] = useState<"month" | "quarter">("month");
   const [chartType, setChartType] = useState<"bar" | "area">("bar");
@@ -125,7 +186,7 @@ export function AnalyticsView({ data }: { data: AnalyticsData | null }) {
     const base = grouping === "quarter"
       ? quarterlyBuckets(data.months)
       : data.months.map((m) => ({ label: `${formatMonthShort(m.month)} ${m.month.slice(0, 4)}`, month: m.month, income: m.income, expense: m.expense }));
-    return base.map((b) => ({ ...b, net: b.income - b.expense }));
+    return base.map((b) => ({ ...b, net: netProfit(b.income, b.expense) }));
   }, [data, grouping]);
 
   const bucketed = grouping === "quarter";
@@ -154,8 +215,8 @@ export function AnalyticsView({ data }: { data: AnalyticsData | null }) {
     }
   };
 
-  const profit = data.current.income - data.current.expense;
-  const prevProfit = data.previous.income - data.previous.expense;
+  const profit = netProfit(data.current.income, data.current.expense);
+  const prevProfit = netProfit(data.previous.income, data.previous.expense);
   const margin = profitMargin(data.current.income, data.current.expense);
   const prevMargin = profitMargin(data.previous.income, data.previous.expense);
   const marginDelta = margin !== null && prevMargin !== null ? margin - prevMargin : null;
@@ -213,6 +274,9 @@ export function AnalyticsView({ data }: { data: AnalyticsData | null }) {
         </div>
       </div>
 
+      {/* A2. This year — the current financial year's shape, pace and rhythm */}
+      <ThisYear thisYear={thisYear} />
+
       {/* B. KPI cards for the selected period */}
       <div className="grid grid-cols-2 gap-6 @4xl:grid-cols-4">
         <KPICard card={{ id: "a-income", label: `Total income · ${data.label}`, amount: data.current.income, ...deltaNote(data.current.income, data.previous.income, data.prevLabel, true) }} />
@@ -227,10 +291,13 @@ export function AnalyticsView({ data }: { data: AnalyticsData | null }) {
 
       {/* C. Fixed period comparisons */}
       <div className="grid grid-cols-1 gap-6 @2xl:grid-cols-3">
-        <ComparisonCard title={`This month (${data.comparisons.month.label})`} comparison={data.comparisons.month} />
-        <ComparisonCard title={`This quarter (${data.comparisons.quarter.label})`} comparison={data.comparisons.quarter} />
-        <ComparisonCard title={`This financial year (${data.comparisons.fy.label})`} comparison={data.comparisons.fy} />
+        <ComparisonCard title="This month" label={data.comparisons.month.label} comparison={data.comparisons.month} />
+        <ComparisonCard title="This quarter" label={data.comparisons.quarter.label} comparison={data.comparisons.quarter} />
+        <ComparisonCard title="This financial year" label={data.comparisons.fy.label} comparison={data.comparisons.fy} />
       </div>
+
+      {/* C2. Yearly growth — every financial year on record */}
+      <YearlyGrowth yearly={yearly} />
 
       {/* D+E. Income vs expense trend and net movement */}
       <div className="grid grid-cols-1 items-stretch gap-6 @4xl:grid-cols-12">
@@ -292,10 +359,10 @@ export function AnalyticsView({ data }: { data: AnalyticsData | null }) {
             )}
           </div>
         </section>
-        <section className="min-w-0 rounded-xl border border-border bg-card p-6 @4xl:col-span-5" aria-labelledby="analytics-profit-title">
-          <h2 id="analytics-profit-title" className="text-title-md">Net movement trend</h2>
-          <p className="mt-1 text-caption text-muted-foreground">Income minus expenses per bucket — read together with actual bank balances, not cash in hand.</p>
-          <div className="mt-6 h-64" role="img" aria-label="Income minus expenses over the selected period">
+        <section className="min-w-0 rounded-xl border border-border bg-card p-6 @4xl:col-span-5" aria-labelledby="analytics-net-profit-title">
+          <h2 id="analytics-net-profit-title" className="text-title-md">Net profit trend</h2>
+          <p className="mt-1 text-caption text-muted-foreground">Net profit (income − expenses) per bucket — read together with actual bank balances, not cash in hand.</p>
+          <div className="mt-6 h-64" role="img" aria-label={`Net profit (income minus expenses) per bucket between ${data.from} and ${data.to}`}>
             {trendEmpty ? (
               <p className="grid h-full place-items-center text-body-sm text-muted-foreground">No transactions in this period.</p>
             ) : (
@@ -304,8 +371,9 @@ export function AnalyticsView({ data }: { data: AnalyticsData | null }) {
                   <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="4 4" />
                   <XAxis dataKey={xKey} tickFormatter={xTickFormat} tick={axisTick} axisLine={false} tickLine={false} />
                   <YAxis tickFormatter={(v: number) => formatINR(v, { compact: true })} tick={axisTick} axisLine={false} tickLine={false} width={56} />
-                  <Tooltip content={AnalyticsTooltip} wrapperStyle={{ zIndex: 20 }} cursor={{ stroke: "var(--hairline-strong)" }} />
-                  <Line dataKey="net" name="Net" stroke="var(--income)" strokeWidth={2} dot={{ r: 3, strokeWidth: 0 }} activeDot={{ r: 5, stroke: "var(--card)", strokeWidth: 2 }} type="monotone" />
+                  <Tooltip content={NetProfitTooltip} wrapperStyle={{ zIndex: 20 }} cursor={{ stroke: "var(--hairline-strong)" }} />
+                  <ReferenceLine y={0} stroke="var(--hairline-strong)" />
+                  <Line dataKey="net" name="Net profit" stroke="var(--foreground)" strokeWidth={2} dot={{ r: 3, strokeWidth: 0 }} activeDot={{ r: 5, stroke: "var(--card)", strokeWidth: 2 }} type="monotone" />
                 </LineChart>
               </ResponsiveContainer>
             )}
