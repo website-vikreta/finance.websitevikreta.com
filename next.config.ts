@@ -70,8 +70,12 @@ const nextConfig = (phase: string): NextConfig => ({
   // load instead of hardcoding one IP — That is what caused the loop before
   // (stale 172.22.83.102 vs. current 10.55.45.102). Production ignores this.
   allowedDevOrigins: localDevOrigins(),
-  // pdf-parse reaches into optional binary dependencies; it must not be bundled.
-  serverExternalPackages: ["pdf-parse"],
+  // pdf-parse and pdfjs-dist reach into optional binary dependencies
+  // (@napi-rs/canvas) and are loaded lazily from real node_modules at
+  // runtime — never bundled, so hosts without the native canvas still
+  // resolve them the way a plain Node require does. See
+  // lib/bank-import/pdf.ts "PDF libraries load lazily".
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
   turbopack: {
     rules: {
       "*.css": {
