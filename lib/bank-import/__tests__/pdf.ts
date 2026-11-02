@@ -5,12 +5,8 @@
  * Run: npm run test:bank-import
  */
 import assert from "node:assert/strict";
+import { DEFAULT_MAX_BYTES } from "../limits";
 import {
-  InvalidPDFException,
-  PasswordException,
-} from "pdf-parse";
-import {
-  DEFAULT_MAX_BYTES,
   extractPdfText,
   mapPdfError,
   parseBankStatementPdf,
@@ -21,6 +17,14 @@ let passed = 0;
 function ok(name: string): void {
   passed += 1;
   console.log(`  ✓ ${name}`);
+}
+
+/** pdfjs library errors always carry their class name on `.name`; mapping is
+ *  name-based, so the suite synthesizes them without importing the vendor. */
+function libraryError(name: string, message: string): Error {
+  const error = new Error(message);
+  error.name = name;
+  return error;
 }
 
 function escapePdfString(value: string): string {
@@ -144,11 +148,11 @@ async function run(): Promise<void> {
   await expectCode(extractPdfText(corrupt), "INVALID_PDF");
   ok("pdf: corrupt PDF returns a safe code");
 
-  const noPassword = mapPdfError(new PasswordException("No password given"));
+  const noPassword = mapPdfError(libraryError("PasswordException", "No password given"));
   assert.equal(noPassword.code, "PASSWORD_REQUIRED");
-  const badPassword = mapPdfError(new PasswordException("Incorrect Password"));
+  const badPassword = mapPdfError(libraryError("PasswordException", "Incorrect Password"));
   assert.equal(badPassword.code, "WRONG_PASSWORD");
-  const invalid = mapPdfError(new InvalidPDFException("secret internal parser detail"));
+  const invalid = mapPdfError(libraryError("InvalidPDFException", "secret internal parser detail"));
   assert.equal(invalid.code, "INVALID_PDF");
   assert.ok(!invalid.message.includes("secret"));
   ok("pdf: password/error mapping is safe and does not leak parser text");
