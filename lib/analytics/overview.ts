@@ -4,9 +4,11 @@
  *  comparisons) come out of ONE grouped query; monthly series, breakdowns and extremes
  *  fan out in parallel afterwards. */
 
-import { monthlyTotalsBetween, transactionExtremes, expenseBreakdown, incomeBreakdown, analyticsRangeTotals, type MonthTotals, type Breakdown, type AnalyticsExtreme, type RangeBucketTotals } from "../transactions/queries";
-import { todayInIndia, financialYearLabel } from "../transactions/period";
+import { monthlyTotalsBetween, transactionExtremes, expenseBreakdown, incomeBreakdown, analyticsRangeTotals, yearlyAnalyticsTotals, monthlyTotalsForYear, lastIncomeDate, type MonthTotals, type Breakdown, type AnalyticsExtreme, type RangeBucketTotals } from "../transactions/queries";
+import { todayInIndia, financialYearStart, financialYearLabel } from "../transactions/period";
 import { monthWindow, quarterWindow, fyWindow, fyBounds, shiftWindowBack, MONTH_SHORT, type DateWindow } from "./range";
+import { buildYearlyRows, type YearlyData, type YearlyRawRow } from "./yearly";
+import { buildThisYear, type ThisYearData } from "./this-year";
 
 export type RangeTotals = RangeBucketTotals;
 
@@ -136,4 +138,28 @@ export async function getAnalyticsOverview(spec: { period: "month" | "quarter" |
       },
     },
   };
+}
+
+/** Yearly growth rows for the whole ledger (read-only): every financial year on record with
+ *  profit, margin and safe growth compared against the FULL previous April–March year, in ONE
+ *  grouped query. Returns null when the ledger has no non-deleted transactions at all. */
+export async function getYearlyGrowth(): Promise<YearlyData | null> {
+  const raw = (await yearlyAnalyticsTotals()) as YearlyRawRow[];
+  if (raw.length === 0) return null;
+  return { rows: buildYearlyRows(raw) };
+}
+
+/** "This year" hero band for the analytics page (read-only): the current FY's zero-filled
+ *  monthly rows, the previous year's full totals and the ledger's last income date, all
+ *  assembled by the pure `buildThisYear`. Three small queries in parallel; never null —
+ *  an empty year still produces the band's honest zero state. */
+export async function getThisYear(spec: { today?: string } = {}): Promise<ThisYearData> {
+  const today = spec.today ?? todayInIndia();
+  const fyStart = financialYearStart(today);
+  const [months, lastIncome, raw] = await Promise.all([
+    monthlyTotalsForYear(fyStart),
+    lastIncomeDate(),
+    yearlyAnalyticsTotals(),
+  ]);
+  return buildThisYear({ months, today, lastIncomeDate: lastIncome, yearlyRows: buildYearlyRows(raw) });
 }
