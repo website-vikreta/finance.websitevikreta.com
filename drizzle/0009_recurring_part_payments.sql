@@ -1,0 +1,1 @@
+ALTER TABLE "recurring_expenses" ADD COLUMN "paid_this_period" numeric(18, 2) DEFAULT '0' NOT NULL;

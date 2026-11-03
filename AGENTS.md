@@ -11,12 +11,13 @@ Entering a transaction takes seconds (form or chatbot). Reading the numbers take
 
 ## Non-Negotiables
 
-- **Visual source of truth: `DESIGN.md`** (ClickHouse system). Near-black canvas, electric yellow `#faff69`, Inter + JetBrains Mono. Dark only.
-- Do **not** borrow UI from the main Website Vikreta site (light theme, `#FFD600`, Epilogue). Different product, different system.
+- **Visual source of truth: `DESIGN.md`** (light theme). Warm off-white canvas, white cards, near-black ink, Vikreta yellow `#FFD600` as the only accent, Inter + JetBrains Mono. Light only.
+- Shares the main Website Vikreta brand colors, but **not** its marketing UI (Epilogue, GSAP reveals, marketing sections). This is an internal tool.
+- **No made-up data.** Pages show what's in the database; modules without a backend use `ComingSoon`.
 - **Money is exact.** Integer minor units, stored rate per transaction, INR is the base currency. See `.ai/standards/data-safety.md`.
 - **Nothing saves silently.** Chatbot entries always show a confirm card first.
 - **Every write is audited**, every delete is soft.
-- shadcn/ui (Base UI) primitives in `src/components/ui/` first. Build custom only when no primitive fits.
+- shadcn/ui (Base UI) primitives in `components/ui/` first. Build custom only when no primitive fits.
 - Tokens only. No raw hex in components.
 - Speed: dashboard under 3 s, chat reply under 5 s.
 - Uniformity. Reuse logged conventions in `.ai/learning.md`. Never reinvent spacing/type/color per screen.
@@ -87,6 +88,25 @@ Recipes in `.ai/commands/` are tool-agnostic workflows. Invoke by name or slash 
 | `audit-component` | `.ai/commands/micro/audit-component.md` | Design-token + a11y + data-safety audit on one component |
 | `fix-performance` | `.ai/commands/micro/fix-performance.md` | Dashboard / chat too slow, bundle, CLS |
 | `push` | `.ai/commands/micro/push.md` | Build gate, split commits, push, PR |
+
+## Git Flow
+
+```
+feature/*  ──PR──▶  releases/YYYY-MM  ──PR──▶  stage  ──PR (admin only, monthly)──▶  main = prod
+```
+
+| Branch | Role | Who merges in |
+|--------|------|---------------|
+| `main` | Production. Deployed once a month. | Admin only, from `stage` |
+| `stage` | Pre-prod testing of the month's release | Release PR from `releases/*` |
+| `releases/YYYY-MM` | Collects the month's work. Cut from `main` | Feature PRs, after review |
+| `<type>/<slug>` | One feature or fix. Cut from the current `releases/*` | Author opens PR to `releases/*` |
+
+- Developers: branch from the current `releases/YYYY-MM`, open the PR **against that release branch**. Never PR into `stage` or `main`.
+- Branch names: `feat/`, `fix/`, `refactor/`, `perf/`, `chore/`, `docs/`, `style/` + kebab slug.
+- Monthly cycle: `releases/YYYY-MM` → PR into `stage` → test → admin merges `stage` → `main` (prod deploy) → cut the next `releases/YYYY-MM` from the new `main`.
+- Hotfix: `fix/<slug>` from `main` → PR to `main` (admin), then merge `main` back into `stage` and the open `releases/*`.
+- Current release: `releases/2026-10`.
 
 ## Learning Log — Consistency Memory
 

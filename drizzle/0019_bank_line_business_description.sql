@@ -1,0 +1,1 @@
+ALTER TABLE "bank_statement_lines" ADD COLUMN "business_description" text;

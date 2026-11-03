@@ -6,7 +6,7 @@
 ## Money
 - **Store integer minor units** (paise for INR, cents for USD). Never floats for money. In JS, use `bigint` or integers within `Number.MAX_SAFE_INTEGER`; in MongoDB use `Long`/`Decimal128`, never `double`.
 - Never do arithmetic on display strings. Never `parseFloat` a stored amount.
-- Display only through one helper (`src/lib/money.ts`), `Intl.NumberFormat`:
+- Display only through one helper (`lib/money.ts`), `Intl.NumberFormat`:
   - INR: `new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" })` → `₹1,23,456.00`
   - USD: `new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })` → `$1,234.00`
 - Totals are summed in the database from stored minor units, then formatted once.
@@ -18,7 +18,7 @@
 - **The stored rate never changes later.** No re-converting old rows when the rate moves.
 - Rate service down → manager enters the rate by hand; store `rate_source = manual` and show a `text-warning` "manual rate" marker wherever the row appears.
 - Conversion records value only. It never moves money.
-- Rate precision: store the rate as a scaled integer or decimal string (e.g. 4 decimal places), define rounding once (half-even) in `src/lib/currency.ts`.
+- Rate precision: store the rate as a scaled integer or decimal string (e.g. 4 decimal places), define rounding once (half-even) in `lib/currency.ts`.
 
 ## Writes (F4 + F5)
 - One write path for manual and chatbot. Same schema, same server function. Only `source` differs (`manual | chatbot`).

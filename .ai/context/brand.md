@@ -1,34 +1,32 @@
 # Brand — Finance Tool
 
-> Quick reference. **Full spec: `DESIGN.md`** (ClickHouse design system). If this file and `DESIGN.md` disagree, `DESIGN.md` wins.
-> This tool does NOT use the main Website Vikreta brand (light `#FAFAF7`, `#FFD600`, Epilogue).
+> Quick reference. **Full spec: `DESIGN.md`** (light Website Vikreta finance theme). If this file and `DESIGN.md` disagree, `DESIGN.md` wins.
+> Same brand family as websitevikreta.com (yellow `#FFD600`, near-black ink), styled as a calm internal tool: no Epilogue, no marketing motion.
 
-## Palette (dark only)
+## Palette (light only)
 | Role | DESIGN.md token | Value | Tailwind class |
 |------|-----------------|-------|----------------|
-| Canvas (page) | `canvas` | `#0a0a0a` | `bg-background` |
-| Surface soft | `surface-soft` | `#121212` | `bg-surface-soft` / `bg-muted` |
-| Card | `surface-card` | `#1a1a1a` | `bg-card` |
-| Elevated (nested, menus) | `surface-elevated` | `#242424` | `bg-surface-elevated` / `bg-popover` |
-| Primary (electric yellow) | `primary` | `#faff69` | `bg-primary` / `text-primary` |
-| Primary pressed | `primary-active` | `#e6eb52` | `bg-primary-active` |
-| Primary disabled | `primary-disabled` | `#3a3a1f` | `bg-primary-disabled` |
-| Text on yellow | `on-primary` | `#0a0a0a` | `text-primary-foreground` |
-| Headline / ink | `ink` | `#ffffff` | `text-foreground` |
-| Body | `body` | `#cccccc` | `text-body` (body default) |
-| Body strong | `body-strong` | `#e6e6e6` | `text-body-strong` |
-| Muted | `muted` | `#888888` | `text-muted-foreground` |
-| Muted soft | `muted-soft` | `#5a5a5a` | `text-muted-soft` |
-| Hairline | `hairline` | `#2a2a2a` | `border-border` |
-| Hairline strong | `hairline-strong` | `#3a3a3a` | `border-input` / `border-hairline-strong` |
-| Income / success | `accent-emerald` | `#22c55e` | `text-income` / `text-success` |
-| Expense / error | `accent-rose` | `#ef4444` | `text-expense` / `text-destructive` |
-| Warning | `warning` | `#f59e0b` | `text-warning` |
-| Info | `accent-blue` | `#3b82f6` | `text-info` |
+| Canvas (page) | `canvas` | `#F8F8F4` | `bg-background` |
+| Card | `surface-card` | `#FFFFFF` | `bg-card` |
+| Quiet fill | `surface-muted` | `#F1F1EC` | `bg-muted` |
+| Hover / secondary fill | `surface-secondary` | `#F4F4EE` | `bg-secondary` / `hover:bg-accent` |
+| Primary (Vikreta yellow) | `primary` | `#FFD600` | `bg-primary` / `ring-ring` |
+| Primary pressed | `primary-active` | `#E6C200` | `bg-primary-active` |
+| Text on yellow | `on-primary` | `#0A0A0A` | `text-primary-foreground` |
+| Headline / ink | `ink` | `#0A0A0A` | `text-foreground` |
+| Body | `body` | `#27272A` | `text-body` (body default) |
+| Muted | `muted` | `#71717A` | `text-muted-foreground` |
+| Muted soft | `muted-soft` | `#A1A1AA` | `text-muted-soft` |
+| Hairline | `hairline` | `#E8E8E2` | `border-border` |
+| Money in | `success` | `#22C55E` | `text-success` |
+| Error / negative | `destructive` | `#EF4444` | `text-destructive` |
+| Warning | `warning` | `#F59E0B` | `text-warning` |
+| Income chart fill | `income-fill` | `#FFD600` | `bg-income` |
+| Expense chart fill | `expense-fill` | `#CBD5E1` | `bg-expense` |
 
-**Rule:** Yellow + black is the brand. Yellow goes on: the ONE primary action per view, headline stat numbers, the active nav item, the focused input ring, the highlighted chart series. Nothing else.
-**Rule:** Income green and expense red are **data colors**, not decoration. Use them only on amounts, deltas and chart series that mean income/expense.
-**Rule:** No second brand color. No gradients. No drop shadows. Depth = canvas vs card contrast + 1px hairline.
+**Rule:** Yellow + near-black is the brand. Yellow goes on: the ONE primary action per view, the focus ring, the income series and share bars, small accents (eyebrow rule, dots, KPI badge underline). Never as text on white.
+**Rule:** Green (`text-success`) marks money in; money out stays ink. Chart fills are `bg-income` / `bg-expense`.
+**Rule:** No second brand color. No gradients. No drop shadows on cards. Depth = off-white canvas vs white card + 1px hairline.
 
 ---
 
@@ -44,7 +42,7 @@
 **What we sound like:**
 - Short. Plain. Exact.
 - Say what happened, with the real value: "Saved ₹8,500 (USD 100 at ₹85.00)".
-- Errors say what to do next: "Rate service is down. Enter the rate by hand."
+- Errors and prompts say what to do next: "What USD → INR rate should I use? Send just the number, e.g. 88.50."
 - Confirm before anything destructive: "Delete Rent, Oct 2026? It moves to the audit log and can be restored."
 
 **What we never sound like:**
@@ -61,4 +59,4 @@
 Fast and quiet. Motion confirms an action or shows where something came from, nothing more. Full rules: `.ai/standards/motion-system.md`.
 
 ## Imagery
-No photos, no illustrations. The data is the visual: numbers, tables, charts. Icons from `lucide-react` only.
+No photos, no illustrations, no dot patterns. The data is the visual: numbers, tables, charts. The only brand image is the logo. Icons from `lucide-react` only.

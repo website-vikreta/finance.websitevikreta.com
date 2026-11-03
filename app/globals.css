@@ -1,0 +1,257 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens: source of truth is DESIGN.md (light Website Vikreta finance theme).
+ * Light only. No dark theme, no `.dark` class, no toggle.
+ * Rules for using these tokens: .ai/standards/design-system.md
+ */
+
+@theme inline {
+  /* Fonts */
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* shadcn semantic colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-other: var(--chart-other);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* DESIGN.md colors without a shadcn equivalent */
+  --color-primary-active: var(--primary-active);
+  --color-primary-disabled: var(--primary-disabled);
+  --color-body: var(--body);
+  --color-body-strong: var(--body-strong);
+  --color-muted-soft: var(--muted-soft);
+  --color-hairline: var(--border);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-surface-soft: var(--surface-soft);
+  --color-surface-card: var(--card);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-income: var(--income);
+  --color-expense: var(--expense);
+
+  /* Radius: xs 4 / sm 6 / md 8 / lg 12 (DESIGN.md), mapped to shadcn class names */
+  --radius-sm: 4px;   /* DESIGN xs: badge accents */
+  --radius-md: 6px;   /* DESIGN sm: small inline buttons, menu items */
+  --radius-lg: 8px;   /* DESIGN md: buttons, inputs, selects */
+  --radius-xl: 12px;  /* DESIGN lg: cards, dialogs, code windows */
+  --radius-2xl: 12px;
+  --radius-3xl: 12px;
+  --radius-4xl: 9999px;
+
+  /* Type scale (DESIGN.md typography). Use as text-display-xl, text-title-md, ... */
+  --text-display-xl: 64px;
+  --text-display-xl--line-height: 1.05;
+  --text-display-xl--letter-spacing: -2.5px;
+  --text-display-xl--font-weight: 700;
+  --text-display-lg: 48px;
+  --text-display-lg--line-height: 1.1;
+  --text-display-lg--letter-spacing: -2px;
+  --text-display-lg--font-weight: 700;
+  --text-display-md: 36px;
+  --text-display-md--line-height: 1.15;
+  --text-display-md--letter-spacing: -1.5px;
+  --text-display-md--font-weight: 700;
+  --text-display-sm: 28px;
+  --text-display-sm--line-height: 1.2;
+  --text-display-sm--letter-spacing: -1px;
+  --text-display-sm--font-weight: 700;
+  --text-title-lg: 22px;
+  --text-title-lg--line-height: 1.3;
+  --text-title-lg--letter-spacing: -0.3px;
+  --text-title-lg--font-weight: 700;
+  --text-title-md: 16px;
+  --text-title-md--line-height: 1.4;
+  --text-title-md--font-weight: 600;
+  --text-title-sm: 15px;
+  --text-title-sm--line-height: 1.4;
+  --text-title-sm--font-weight: 600;
+  --text-stat: 48px;
+  --text-stat--line-height: 1;
+  --text-stat--letter-spacing: -1.5px;
+  --text-stat--font-weight: 700;
+  --text-body-md: 15px;
+  --text-body-md--line-height: 1.55;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 1.55;
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+  --text-caption--font-weight: 500;
+  --text-micro: 11px;
+  --text-micro--line-height: 1.4;
+  --text-micro--font-weight: 500;
+  --text-eyebrow: 11px;
+  --text-eyebrow--line-height: 1.4;
+  --text-eyebrow--letter-spacing: 1.5px;
+  --text-eyebrow--font-weight: 600;
+  --text-code: 13px;
+  --text-code--line-height: 1.55;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Approved SaaS Design Tokens (from Screenshots & Brand Spec) */
+  --background: #F8F8F4;          /* Warm off-white canvas */
+  --foreground: #0A0A0A;          /* Near-black ink */
+  --card: #FFFFFF;                /* Pure white card */
+  --card-foreground: #0A0A0A;
+  --popover: #FFFFFF;
+  --popover-foreground: #0A0A0A;
+  --primary: #FFD600;             /* Brand yellow */
+  --primary-foreground: #0A0A0A;  /* Black text on yellow */
+  --primary-active: #E6C200;
+  --primary-disabled: #FFF3AA;
+  --secondary: #F4F4EE;
+  --secondary-foreground: #0A0A0A;
+  --muted: #F1F1EC;
+  --muted-foreground: #71717A;
+  --accent: #F4F4EE;
+  --accent-foreground: #0A0A0A;
+  --destructive: #EF4444;
+  --border: #E8E8E2;
+  --input: #E4E4DE;
+  --ring: #FFD600;
+
+  --body: #27272A;
+  --body-strong: #0A0A0A;
+  --muted-soft: #A1A1AA;
+  --hairline-strong: #D4D4D0;
+  --surface-soft: #F8F8F4;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --info: #3B82F6;
+  /* Chart series. Validated with the dataviz palette checker (CVD ΔE 24, normal ΔE 29).
+     Brand #FFD600 is too light for 2px lines on white (1.4:1), so income uses a deeper yellow. */
+  --income: #EDA100;
+  --expense: #64748B;
+
+  /* Charts: Yellow for Income, Light Grey for Expenses */
+  /* Categorical slots for part-to-whole charts (donuts), fixed order, validated as a ring.
+     "Other" is a deliberate neutral, not a sixth identity. */
+  --chart-1: #2A78D6;
+  --chart-2: #EB6834;
+  --chart-3: #1BAF7A;
+  --chart-4: #EDA100;
+  --chart-5: #E87BA4;
+  --chart-other: #52514E;
+
+  --radius: 12px;
+
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #52525B;
+  --sidebar-primary: #0A0A0A;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F4F4EE;
+  --sidebar-accent-foreground: #0A0A0A;
+  --sidebar-border: #E8E8E2;
+  --sidebar-ring: #FFD600;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-body;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+/* Floating Finance Chat Bot face: periodic blink + a bigger smile on hover. */
+@media (prefers-reduced-motion: no-preference) {
+  .bot-fab .bot-eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: bot-blink 4s ease-in-out infinite;
+  }
+  .bot-fab .bot-smile {
+    transform-box: fill-box;
+    transform-origin: center top;
+    transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .bot-fab:hover .bot-smile {
+    transform: scaleY(1.6);
+  }
+}
+
+@keyframes bot-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+
+/* Reports → Export PDF uses the browser's print. A zero page margin drops the browser's
+   date/URL header and footer; .print-document repeats its padding on every page instead. */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  .print-document {
+    padding: 12mm 14mm;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  body {
+    background: var(--card);
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  /* Only the document prints, however printing starts (Download PDF or Cmd+P):
+     no toasts, dialogs, menus, tooltips or the Next.js dev badge. */
+  [data-sonner-toaster],
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-overlay"],
+  [data-slot="sheet-content"],
+  [data-slot="select-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="tooltip-content"],
+  nextjs-portal {
+    display: none !important;
+  }
+}

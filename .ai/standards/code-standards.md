@@ -13,12 +13,12 @@
 
 ## File Naming
 ```
-src/app/(app)/transactions/page.tsx     App Router convention (route groups for shell layouts)
-src/components/ui/button.tsx            shadcn primitives: kebab-case (as generated)
-src/components/layout/AppSidebar.tsx    Our components: PascalCase
-src/components/transactions/TxnTable.tsx
-src/lib/money.ts                        camelCase / kebab for utils
-src/lib/db/transactions.ts
+app/(app)/transactions/page.tsx     App Router convention (route groups for shell layouts)
+components/ui/button.tsx            shadcn primitives: kebab-case (as generated)
+components/layout/AppSidebar.tsx    Our components: PascalCase
+components/transactions/TxnTable.tsx
+lib/money.ts                        camelCase / kebab for utils
+lib/db/transactions.ts
 ```
 
 ## Component Structure
