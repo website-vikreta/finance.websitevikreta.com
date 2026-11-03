@@ -24,6 +24,10 @@ import {
 import { duplicateMessage, findDuplicate } from "@/lib/transactions/duplicates";
 import { redoPayment, undoPayment } from "@/lib/transactions/recurring";
 import { toCategory } from "@/lib/transactions/categories";
+import {
+  syncStatementForDeletedTransaction,
+  syncStatementForRestoredTransaction,
+} from "@/lib/bank-import/statement-sync";
 
 export interface TransactionInput {
   type: "income" | "expense";
@@ -223,6 +227,13 @@ export async function deleteTransaction(
   id: string,
   /** Audit source of the deletion. Defaults to "manual"; bank imports pass "bank_import". */
   source: "manual" | "bank_import" = "manual",
+  /**
+   * Sync the owning statement the same way /transactions deleted the row:
+   * a bank-import transaction vanishing from the ledger demotes its statement
+   * from `completed` back to `review`. Whole-statement deletion instead
+   * deletes the statement right after and passes false.
+   */
+  syncStatement = true,
 ): Promise<ManageResult> {
   try {
     return await db.transaction(async (tx) => {
@@ -247,6 +258,10 @@ export async function deleteTransaction(
         beforeState: { deleted_at: null },
         afterState: { deleted_at: deleted.deletedAt },
       });
+
+      if (syncStatement) {
+        await syncStatementForDeletedTransaction(tx, userId, id);
+      }
       return { ok: true, id } as ManageResult;
     });
   } catch (err) {
@@ -281,6 +296,11 @@ export async function restoreTransaction(userId: string, id: string): Promise<Ma
         beforeState: { deleted_at: row.deletedAt },
         afterState: { deleted_at: null, client_id: restored.clientId },
       });
+
+      // An imported row back in the ledger re-livens its statement's import;
+      // the statement completes again once nothing else stays unresolved.
+      await syncStatementForRestoredTransaction(tx, userId, id);
+
       return { ok: true, id } as ManageResult;
     });
   } catch (err) {

@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { ReopenStatementButton } from "@/components/bank-import/reopen-statement";
 import type { LineFlag, LineStatus } from "@/lib/bank-import/types";
 import {
   STATEMENT_STATUS_LABELS,
@@ -152,10 +153,31 @@ export function StatementSummaryCard({ detail }: { detail: StatementDetail }) {
 /** Those are the read-only staging rows a manager reviews before Phase 3. */
 export function StatementDetailScreen({ detail }: { detail: StatementDetail }) {
   const { lines } = detail;
+  const statementId = detail.statement.id;
+  // Imports deleted in the ledger while this statement already claimed
+  // "completed": per-row marks below, plus an explicit reopen rescue here.
+  const deadImports = lines.filter(
+    (line) => line.status === "imported" && line.importLive === false,
+  ).length;
 
   return (
     <div className="space-y-6">
       <StatementSummaryCard detail={detail} />
+
+      {deadImports > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3">
+          <div className="space-y-0.5">
+            <p className="text-body-sm text-foreground">
+              {deadImports} imported row{deadImports === 1 ? "" : "s"} deleted in the ledger
+            </p>
+            <p className="text-caption text-muted-foreground">
+              These staged rows no longer have live transactions. Reopen the statement to review
+              and re-import them.
+            </p>
+          </div>
+          <ReopenStatementButton statementId={statementId} deadCount={deadImports} />
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader className="pb-0">
@@ -206,7 +228,26 @@ export function StatementDetailScreen({ detail }: { detail: StatementDetail }) {
                       ))}
                     </p>
                   </TableCell>
-                  <TableCell className="font-mono pr-4">{LINE_BADGE[line.status]}</TableCell>
+                  <TableCell className="font-mono pr-4">
+                    {LINE_BADGE[line.status]}
+                    {line.status === "imported" && line.importLive === false ? (
+                      <p
+                        className="mt-1 text-caption text-destructive"
+                        title="The imported transaction was deleted in the ledger."
+                      >
+                        Import deleted
+                      </p>
+                    ) : line.status === "imported" &&
+                      line.importLive === true &&
+                      line.postImportEdited ? (
+                      <p
+                        className="mt-1 text-caption text-warning"
+                        title="The ledger transaction was edited after this import."
+                      >
+                        Edited in ledger
+                      </p>
+                    ) : null}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

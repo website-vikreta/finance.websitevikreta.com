@@ -1083,6 +1083,16 @@ export function ReviewTable({
                             Import deleted
                           </p>
                         ) : null}
+                        {line.status === "imported" &&
+                        line.importLive === true &&
+                        line.postImportEdited ? (
+                          <p
+                            className="text-caption text-warning"
+                            title="The ledger transaction was edited after this import."
+                          >
+                            Edited in ledger
+                          </p>
+                        ) : null}
                         {line.skipReason ? (
                           <p
                             className="max-w-[10rem] truncate text-caption text-muted-foreground"

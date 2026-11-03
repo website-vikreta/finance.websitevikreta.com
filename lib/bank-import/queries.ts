@@ -90,6 +90,8 @@ export interface StatementLineRow {
   importAttempt: number;
   /** True when the linked transaction exists and is live (not soft-deleted). */
   importLive: boolean;
+  /** True when the live linked transaction changed after the import (payload hash drift). */
+  postImportEdited?: boolean;
 }
 
 export interface StatementDetail {
@@ -158,6 +160,8 @@ interface StatementLineRaw
   reviewedAt: string | null;
   importAttempt: number | string | null;
   importLive: boolean | null;
+  importedPayloadHash: string | null;
+  ledgerPayloadHash: string | null;
 }
 
 function mapSummary(raw: StatementRaw): StatementSummary {
@@ -301,10 +305,12 @@ export async function getStatementDetail(id: string): Promise<StatementDetail | 
       inv.number AS "invoiceNumber",
       l.import_attempt::int AS "importAttempt",
       l.transaction_id AS "transactionId",
+      l.imported_payload_hash AS "importedPayloadHash",
       -- Review-workspace pointer state only: the review table needs to know
       -- whether the linked transaction is still live. Staging rows never join
       -- into dashboard, ledger, client, report, or export queries.
-      (t.deleted_at IS NULL) AS "importLive"
+      (t.deleted_at IS NULL) AS "importLive",
+      t.payload_hash AS "ledgerPayloadHash"
     FROM bank_statement_lines l
     LEFT JOIN clients c ON c.client_id = l.client_id
     LEFT JOIN categories cat ON cat.id = l.category_id
@@ -329,6 +335,15 @@ export async function getStatementDetail(id: string): Promise<StatementDetail | 
     importAttempt: line.importAttempt == null ? 0 : Number(line.importAttempt),
     importLive: line.importLive == null ? false : Boolean(line.importLive),
     businessDescription: line.businessDescription ?? null,
+    // A transaction edited in the ledger after its import drifts from the
+    // payload hash the import recorded. Hashes written before the drift are
+    // the evidence; a staging row without one never claims "edited".
+    postImportEdited:
+      line.status === "imported" &&
+      line.importLive === true &&
+      line.importedPayloadHash != null &&
+      line.ledgerPayloadHash != null &&
+      line.importedPayloadHash !== line.ledgerPayloadHash,
   }));
 
   return {
