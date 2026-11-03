@@ -150,6 +150,7 @@ export const SAFE_ERROR_CODES = [
   "TOO_MANY_PAGES",
   "TOO_MANY_ROWS",
   "UNSUPPORTED_CURRENCY",
+  "PARSER_UNAVAILABLE",
 ] as const;
 
 export type SafeErrorCode = (typeof SAFE_ERROR_CODES)[number];

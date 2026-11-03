@@ -26,10 +26,12 @@ import {
   type ImportInvoiceOption,
 } from "@/lib/bank-import/import";
 import {
+  convertLinesPositive,
   markLineDuplicate,
   markLineReady,
   markLinesDuplicate,
   type BulkDuplicateResult,
+  type ConvertPositiveResult,
   reopenLine,
   skipLine,
   updateLineReview,
@@ -176,6 +178,40 @@ export async function markLinesDuplicateAction(
   }
 
   const result = await markLinesDuplicate(guard.userId, statementId, lineIds);
+  if (result.ok) refresh();
+  return result;
+}
+
+const CONVERT_DENIED = (error: string): ConvertPositiveResult => ({
+  ok: false,
+  error,
+  requested: 0,
+  converted: 0,
+  readyNow: 0,
+  failed: 0,
+  statementStatus: null,
+  failures: [],
+});
+
+/**
+ * Flips the flagged negative amounts on the selected rows to positive
+ * (bulk "Convert − to +" button, and the single-row editor's convert button
+ * passes one id). Lines commit together in one transaction; per-row blockers
+ * come back as counted failures so the rest of the batch still lands.
+ */
+export async function convertLinesPositiveAction(
+  statementId: string,
+  lineIds: unknown,
+): Promise<ConvertPositiveResult> {
+  const guard = await guardReview();
+  if (!guard.ok) {
+    if (guard.result.ok) {
+      return CONVERT_DENIED("You do not have access to bank imports.");
+    }
+    return CONVERT_DENIED(guard.result.error);
+  }
+
+  const result = await convertLinesPositive(guard.userId, statementId, lineIds);
   if (result.ok) refresh();
   return result;
 }

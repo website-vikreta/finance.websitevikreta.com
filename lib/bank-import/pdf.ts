@@ -82,6 +82,21 @@ async function loadPdfLibrary(): Promise<PdfLibrary> {
   return pdfLibraryLoad;
 }
 
+/** Injectable stand-in for `loadPdfLibrary`; offline tests fake broken hosts. */
+export type PdfLibraryLoader = () => Promise<PdfLibrary>;
+
+/**
+ * Logs a parser infrastructure failure without any message text: error
+ * messages from the PDF stack embed file paths, import reasons and document
+ * fragments, so only the stage and exception class name are ever recorded.
+ */
+function logPdfRuntimeFailure(stage: string, error: unknown): void {
+  console.error("[bank-import] pdf parser runtime failure", {
+    stage,
+    errorName: error instanceof Error ? error.name : "",
+  });
+}
+
 
 type ColumnAnchors = {
   txnDate: number;
@@ -410,8 +425,8 @@ async function extractSpatialTables(
   bytes: Uint8Array,
   password: string | undefined,
   maxPages: number,
+  getDocument: PdfLibrary["getDocument"],
 ): Promise<PageTable[]> {
-  const { getDocument } = await loadPdfLibrary();
   const task = getDocument({
     data: Uint8Array.from(bytes),
     ...(password ? { password } : {}),
@@ -476,6 +491,16 @@ function asBytes(data: Uint8Array): Uint8Array {
  *
  * The library classes are matched by `error.name` (pdfjs exceptions always
  * set it), so this mapping stays usable without importing the libraries.
+ *
+ * Two different failures used to look identical to the reviewer:
+ * - a file whose content pdfjs cannot read (INVALID_PDF), and
+ * - a host where the parser itself cannot start. In Node, pdfjs runs the
+ *   parsing core as a fake worker resolved by `import(workerSrc)` relative
+ *   to its own module file, and re-wraps every failure — including a file
+ *   bundled without that worker — as
+ *   `Setting up fake worker failed: "<reason>".` (plain `Error` name). The
+ *   reason text there names import paths, never document content, so the
+ *   signature is safe to match; it is reported as PARSER_UNAVAILABLE.
  */
 export function mapPdfError(error: unknown): BankImportError {
   if (error instanceof BankImportError) return error;
@@ -494,16 +519,28 @@ export function mapPdfError(error: unknown): BankImportError {
     return new BankImportError("INVALID_PDF", "This file is not a readable PDF.");
   }
 
+  if (message.includes("setting up fake worker failed")) {
+    return new BankImportError(
+      "PARSER_UNAVAILABLE",
+      "The PDF parser could not start on this server. Try again later.",
+    );
+  }
+
   return new BankImportError("INVALID_PDF", "This file is not a readable PDF.");
 }
 
 /**
  * Extracts text from a PDF. The original bytes are not retained, and the
  * parser is always destroyed in `finally`.
+ *
+ * `loadLibrary` is injectable so offline tests can simulate hosts where one
+ * or both PDF libraries are broken at runtime; production passes the cached
+ * real loader.
  */
 export async function extractPdfText(
   data: Uint8Array,
   options: PdfExtractionOptions = {},
+  loadLibrary: PdfLibraryLoader = loadPdfLibrary,
 ): Promise<PdfExtraction> {
   const bytes = asBytes(data);
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -522,14 +559,28 @@ export async function extractPdfText(
     throw new BankImportError("NOT_A_PDF", "The uploaded file is not a PDF.");
   }
 
+  let PDFParseRender: PdfLibrary["PDFParse"];
+  let getDocument: PdfLibrary["getDocument"];
+  try {
+    const library = await loadLibrary();
+    PDFParseRender = library.PDFParse;
+    getDocument = library.getDocument;
+  } catch (error) {
+    // A library that cannot even load is a deployment problem, never file
+    // content: report 503-worthy unavailability instead of blaming the file.
+    logPdfRuntimeFailure("library-load", error);
+    throw new BankImportError(
+      "PARSER_UNAVAILABLE",
+      "The PDF parser could not start on this server. Try again later.",
+    );
+  }
+
   let parser: PDFParse | null = null;
   try {
-    const { PDFParse } = await loadPdfLibrary();
-
     // pdf-parse transfers the input buffer to its worker. Copy after the size
     // checks so the caller's bytes (for hashing/retry metadata) stay intact.
     const parserBytes = Uint8Array.from(bytes);
-    parser = new PDFParse({
+    parser = new PDFParseRender({
       data: parserBytes,
       ...(options.password ? { password: options.password } : {}),
       verbosity: 0,
@@ -572,7 +623,7 @@ export async function extractPdfText(
     // Geometry is the source of truth when the PDF has no drawn table grid.
     let tables: PageTable[] = [];
     try {
-      tables = await extractSpatialTables(bytes, options.password, maxPages);
+      tables = await extractSpatialTables(bytes, options.password, maxPages, getDocument);
     } catch (error) {
       // A PDF.js runtime failure keeps text-based parsing as the fallback.
       // Code defects are programming errors and must surface instead of
@@ -582,6 +633,10 @@ export async function extractPdfText(
         "ReferenceError", "TypeError", "RangeError", "SyntaxError", "EvalError", "InternalError",
       ]);
       if (rethrowable.has(name)) throw error;
+      // Degrading done silently is how the deployed failure stayed invisible:
+      // every statement parsed unpositioned and nobody knew why. The log
+      // carries the exception class only, never the message.
+      logPdfRuntimeFailure("pdfjs-spatial", error);
       tables = [];
     }
     if (tables.length === 0) {
