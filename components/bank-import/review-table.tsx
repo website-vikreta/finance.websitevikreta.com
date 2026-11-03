@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  convertLinesPositiveAction,
   createClientAction,
   importLinesAction,
   listInvoiceOptionsAction,
@@ -39,7 +40,7 @@ import {
   updateLineReviewAction,
 } from "@/app/bank-connections/actions";
 import type { ImportBatchResult, ImportInvoiceOption } from "@/lib/bank-import/import";
-import type { BulkDuplicateResult, ReviewResult } from "@/lib/bank-import/review";
+import type { BulkDuplicateResult, ConvertPositiveResult, ReviewResult } from "@/lib/bank-import/review";
 import {
   BLOCKING_LINE_FLAGS,
   CLASSIFICATIONS,
@@ -122,9 +123,29 @@ function isDuplicateSelectable(line: StatementLineRow, editable: boolean): boole
   return line.status === "pending" || line.status === "ready";
 }
 
+/**
+ * A row the bulk "Convert − to +" action can fix: a pending row flagged
+ * NEGATIVE_AMOUNT with exactly one amount side filled. Mirrors
+ * `convertPositiveDecision` in review.ts (server-only policy, so the client
+ * keeps its own narrow check).
+ */
+export function isConvertiblePositive(line: StatementLineRow, editable: boolean): boolean {
+  if (!editable) return false;
+  if (line.status !== "pending") return false;
+  if (!line.flags.includes("NEGATIVE_AMOUNT")) return false;
+  return (line.withdrawalAmount != null) !== (line.depositAmount != null);
+}
+
 function amountCell(value: string | null) {
   if (!value) return <span className="text-muted-foreground">—</span>;
-  return <span className="font-mono">{formatINR(Number(value), { decimals: 2 })}</span>;
+  // A negative staged amount is a flagged parser event waiting for review;
+  // money text stays final, the tint only points the reviewer at it.
+  const negative = value.startsWith("-");
+  return (
+    <span className={`font-mono ${negative ? "text-destructive" : ""}`}>
+      {formatINR(Number(value), { decimals: 2 })}
+    </span>
+  );
 }
 
 function mappingLabel(line: StatementLineRow): string | null {
@@ -163,6 +184,9 @@ export function ReviewTable({
   // flows stay mutually exclusive so one selection is never acted on twice.
   const [duplicateStage, setDuplicateStage] = useState<"idle" | "confirm" | "running">("idle");
   const [duplicateResult, setDuplicateResult] = useState<BulkDuplicateResult | null>(null);
+  // Convert − to + shares the same exclusions for the same reason.
+  const [convertStage, setConvertStage] = useState<"idle" | "confirm" | "running">("idle");
+  const [convertResult, setConvertResult] = useState<ConvertPositiveResult | null>(null);
   const [invoiceOptions, setInvoiceOptions] = useState<Record<string, ImportInvoiceOption[]>>({});
   const [creatingClient, setCreatingClient] = useState(false);
   const [newClientDialog, setNewClientDialog] = useState<{ lineId: string; name: string } | null>(null);
@@ -224,6 +248,16 @@ export function ReviewTable({
     [selectedIds, lineById, editable],
   );
 
+  /** The flagged-negative subset of the selection: what "Convert − to +" acts on. */
+  const selectedConvertIds = useMemo(
+    () =>
+      [...selectedIds].filter((id) => {
+        const line = lineById.get(id);
+        return line ? isConvertiblePositive(line, editable) : false;
+      }),
+    [selectedIds, lineById, editable],
+  );
+
   function toggleLine(lineId: string, checked: boolean) {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -247,13 +281,22 @@ export function ReviewTable({
   function startImport() {
     if (selectedImportIds.length === 0) return;
     setDuplicateStage("idle");
+    setConvertStage("idle");
     setImportStage("confirm");
   }
 
   function startDuplicate() {
     if (selectedDuplicateIds.length === 0) return;
     setImportStage("idle");
+    setConvertStage("idle");
     setDuplicateStage("confirm");
+  }
+
+  function startConvert() {
+    if (selectedConvertIds.length === 0) return;
+    setImportStage("idle");
+    setDuplicateStage("idle");
+    setConvertStage("confirm");
   }
 
   function cancelImport() {
@@ -264,6 +307,11 @@ export function ReviewTable({
   function cancelDuplicate() {
     if (duplicateStage === "running") return;
     setDuplicateStage("idle");
+  }
+
+  function cancelConvert() {
+    if (convertStage === "running") return;
+    setConvertStage("idle");
   }
 
   function runImport() {
@@ -354,6 +402,55 @@ export function ReviewTable({
 
   function dismissDuplicateResult() {
     setDuplicateResult(null);
+  }
+
+  function runConvert() {
+    if (convertStage === "running") return;
+    const lineIds = selectedConvertIds;
+    if (lineIds.length === 0) return;
+    setConvertStage("running");
+    startTransition(async () => {
+      let result: ConvertPositiveResult;
+      try {
+        result = await convertLinesPositiveAction(statementId, lineIds);
+      } catch {
+        result = {
+          ok: false,
+          error: "The conversion could not start. Refresh and try again.",
+          requested: lineIds.length,
+          converted: 0,
+          readyNow: 0,
+          failed: lineIds.length,
+          statementStatus: null,
+          failures: [],
+        };
+      }
+      setConvertResult(result);
+      setConvertStage("idle");
+      // Converted rows leave the selection; row blockers stay for a retry.
+      setSelectedIds(
+        new Set(result.failures.map((entry) => entry.lineId).filter((id) => lineIds.includes(id))),
+      );
+      if (result.ok) {
+        if (result.converted > 0) {
+          toast.success(
+            `Converted ${result.converted} row${result.converted === 1 ? "" : "s"} to positive.` +
+              (result.readyNow > 0
+                ? ` ${result.readyNow} became ready for import.`
+                : "") +
+              (result.failed > 0 ? ` ${result.failed} could not be changed.` : ""),
+          );
+        } else if (!result.error) {
+          toast.info("No rows changed.");
+        }
+      }
+      if (result.error) toast.error(result.error);
+      closeEditor();
+    });
+  }
+
+  function dismissConvertResult() {
+    setConvertResult(null);
   }
 
   function dismissImportResult() {
@@ -505,6 +602,21 @@ export function ReviewTable({
     run(line.id, () => markLineDuplicateAction(statementId, line.id, note), "Row marked as duplicate.");
   }
 
+  /** Single-row convert: same server batch, one id, per-row failure surfaced. */
+  function convertPositiveRow(line: StatementLineRow) {
+    run(line.id, async () => {
+      const result = await convertLinesPositiveAction(statementId, [line.id]);
+      if (result.ok && result.failures.length === 0) return { ok: true } as const;
+      return {
+        ok: false,
+        error:
+          result.failures.find((entry) => entry.lineId === line.id)?.error ??
+          result.error ??
+          "The conversion failed. Try again.",
+      } as const;
+    }, "Amount converted to positive.");
+  }
+
   function reopenRow(line: StatementLineRow) {
     run(line.id, () => reopenLineAction(statementId, line.id), "Review reopened.");
   }
@@ -513,7 +625,8 @@ export function ReviewTable({
   const categoryItems = [{ value: "", label: "No category chosen" }, ...options.categories];
 
   const selectedCount = selectedIds.size;
-  const batchBusy = importStage !== "idle" || duplicateStage !== "idle";
+  const batchBusy =
+    importStage !== "idle" || duplicateStage !== "idle" || convertStage !== "idle";
   const replacements = importResult?.results.some((entry) => entry.ok && entry.replacement) ?? false;
 
   return (
@@ -569,6 +682,25 @@ export function ReviewTable({
                 Marked rows are excluded from the import.
               </p>
             </div>
+          ) : convertStage === "confirm" ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-body-sm">
+                Make {selectedConvertIds.length} negative amount
+                {selectedConvertIds.length === 1 ? "" : "s"} positive?
+              </p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={runConvert}>
+                  Convert − to +
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={cancelConvert}>
+                  Cancel
+                </Button>
+              </div>
+              <p className="text-caption text-muted-foreground">
+                Flagged negative amounts flip sign and re-validate; only fully valid rows become
+                ready.
+              </p>
+            </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -596,6 +728,20 @@ export function ReviewTable({
                     : `Duplicate${selectedDuplicateIds.length > 0 ? ` (${selectedDuplicateIds.length})` : ""}`}
                 </Button>
               ) : null}
+              {editable ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={startConvert}
+                  disabled={selectedConvertIds.length === 0 || batchBusy}
+                >
+                  {convertStage === "running" ? <Loader2 className="size-4 animate-spin" /> : null}
+                  {convertStage === "running"
+                    ? `Converting ${selectedConvertIds.length} rows…`
+                    : `Convert − to +${selectedConvertIds.length > 0 ? ` (${selectedConvertIds.length})` : ""}`}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
@@ -603,6 +749,7 @@ export function ReviewTable({
                 onClick={() => {
                   setImportStage("idle");
                   setDuplicateStage("idle");
+                  setConvertStage("idle");
                   setSelectedIds(new Set());
                 }}
                 disabled={selectedCount === 0 || batchBusy}
@@ -611,7 +758,8 @@ export function ReviewTable({
               </Button>
               <p className="text-caption text-muted-foreground">
                 Ready rows import as income or expense; pending rows can be bulk-marked as
-                duplicates; rows whose transaction was deleted can be re-imported.
+                duplicates; flagged negative amounts can be flipped to positive; rows whose
+                transaction was deleted can be re-imported.
               </p>
             </div>
           )}
@@ -710,6 +858,50 @@ export function ReviewTable({
               ) : null}
             </div>
             <Button type="button" size="sm" variant="ghost" onClick={dismissDuplicateResult}>
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {convertResult ? (
+        <div
+          className={`rounded-lg border px-4 py-3 ${
+            convertResult.failed > 0 || !convertResult.ok
+              ? "border-warning/40 bg-warning/10"
+              : "border-success/40 bg-success/10"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1 text-body-sm">
+              <p className="font-medium">
+                {convertResult.ok
+                  ? `Converted ${convertResult.converted} of ${convertResult.requested} selected row${convertResult.requested === 1 ? "" : "s"} to positive.`
+                  : convertResult.error}
+              </p>
+              {convertResult.ok && convertResult.readyNow > 0 ? (
+                <p className="text-caption text-muted-foreground">
+                  {convertResult.readyNow} row
+                  {convertResult.readyNow === 1 ? " became" : "s became"} ready for import.
+                </p>
+              ) : null}
+              {convertResult.ok && convertResult.converted > convertResult.readyNow ? (
+                <p className="text-caption text-muted-foreground">
+                  The rest stay pending until they validate like a normal review save.
+                </p>
+              ) : null}
+              {convertResult.failures.length > 0 ? (
+                <ul className="space-y-0.5 text-caption text-destructive">
+                  {convertResult.failures.map((entry) => (
+                    <li key={entry.lineId}>
+                      {entry.rowNumber > 0 ? `Row ${entry.rowNumber}` : "Selected row"}:{" "}
+                      {entry.error}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+            <Button type="button" size="sm" variant="ghost" onClick={dismissConvertResult}>
               Dismiss
             </Button>
           </div>
@@ -889,6 +1081,16 @@ export function ReviewTable({
                         {line.status === "imported" && line.importLive === false ? (
                           <p className="text-caption text-destructive" title="The imported transaction was deleted in the ledger.">
                             Import deleted
+                          </p>
+                        ) : null}
+                        {line.status === "imported" &&
+                        line.importLive === true &&
+                        line.postImportEdited ? (
+                          <p
+                            className="text-caption text-warning"
+                            title="The ledger transaction was edited after this import."
+                          >
+                            Edited in ledger
                           </p>
                         ) : null}
                         {line.skipReason ? (
@@ -1214,6 +1416,17 @@ export function ReviewTable({
                             >
                               Mark duplicate
                             </Button>
+                            {isConvertiblePositive(line, editable) ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => convertPositiveRow(line)}
+                                disabled={Boolean(busyKey) || batchBusy}
+                              >
+                                Convert to +
+                              </Button>
+                            ) : null}
                             {line.status === "ready" ? (
                               <Button
                                 type="button"

@@ -20,7 +20,7 @@ import { STATEMENT_SAVE_ERROR } from "@/lib/bank-import/upload-errors";
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type StatusCode = 400 | 401 | 403 | 409 | 413 | 415 | 422 | 500;
+type StatusCode = 400 | 401 | 403 | 409 | 413 | 415 | 422 | 500 | 503;
 
 function errorBody(message: string, code?: string) {
   return code ? { ok: false, error: message, code } : { ok: false, error: message };
@@ -42,6 +42,9 @@ function normalizeError(error: unknown): { status: StatusCode; message: string; 
       : error.code === "NOT_A_PDF" ? 415
       : error.code === "INVALID_PDF" || error.code === "NO_TEXT_LAYER" ? 422
       : error.code === "PASSWORD_REQUIRED" || error.code === "WRONG_PASSWORD" ? 400
+      // The deployment's parser is broken, not the reviewer's file: a 503
+      // says "server side, retryable" instead of blaming the statement PDF.
+      : error.code === "PARSER_UNAVAILABLE" ? 503
       : 400;
     return { status, message: error.message, code: error.code };
   }

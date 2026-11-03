@@ -1,9 +1,10 @@
 /**
  * Phase 3 statement reconciliation (informational only).
  *
- * - Checks opening + deposits − withdrawals against the declared closing
- *   balance using exact decimal-string arithmetic from `normalize.ts`; no
- *   floating point ever touches a money value here.
+ * - Checks opening + deposits − withdrawals (+ any movement derived from the
+ *   printed balance chain) against the declared closing balance using exact
+ *   decimal-string arithmetic from `normalize.ts`; no floating point ever
+ *   touches a money value here.
  * - Never writes anything: no adjustment transactions, no ledger changes.
  * - A result is a review safeguard: `unbalanced` warns the reviewer to
  *   re-check the file before trusting the staged rows.
@@ -18,7 +19,7 @@ import {
   decimalSubtract,
   parseAmountCell,
 } from "./normalize";
-import type { StatementDetail } from "./queries";
+import type { StatementDetail, StatementLineRow } from "./queries";
 
 export type ReconciliationStatus = "balanced" | "unbalanced" | "insufficient_data";
 
@@ -31,7 +32,7 @@ export interface StatementOverlap {
 
 export interface StatementReconciliation {
   status: ReconciliationStatus;
-  /** Closed only when every parsed row has a computable amount. */
+  /** Closed when the counted + chain-derived movement reaches the closing balance. */
   difference: string | null;
   expectedClosing: string | null;
   openingBalance: string | null;
@@ -47,8 +48,12 @@ export interface StatementReconciliation {
   errorCount: number;
   /** pending + error: rows the reviewer has not resolved yet. */
   unresolvedCount: number;
-  /** Rows whose amounts cannot be counted; they reduce what stays countable. */
+  /** Rows whose amounts cannot be counted and whose movement no printed chain can supply. */
   invalidLineCount: number;
+  /** Signed movement of rows derived from the printed balance chain (exact source data). */
+  derivedMovement: string;
+  /** How many rows contribute through the chain-derived movement. */
+  derivedMovementCount: number;
   warnings: string[];
   /** Non-error notes, e.g. which value was reconstructed from row balances. */
   notes: string[];
@@ -143,6 +148,73 @@ interface BalanceChainRow {
 }
 
 /**
+ * Walks the rows in page/row order and attributes each row's movement to the
+ * balance check. Countable rows contribute their own amount; a row whose
+ * amount cells cannot be counted still prints a closing balance, and two
+ * consecutive printed balances pin that row's movement exactly
+ * (`balance = previous printed balance + this row's movement`). That is the
+ * same printed-chain evidence the opening / closing derivation already uses —
+ * it counts source data, never a guess.
+ *
+ * A derivation is only taken while the chain is dense since the last printed
+ * balance: a countable row WITHOUT a printed balance has its movement counted
+ * from the amount already, and deriving a span over it would count it twice.
+ * Such spans are excluded (`excludedLineCount`) like before.
+ */
+function classifyMovements(lines: StatementLineRow[] | BalanceChainRow[]): {
+  deposits: string[];
+  withdrawals: string[];
+  /** Signed total movement of rows derived from the printed balance chain. */
+  derivedMovement: string;
+  derivedCount: number;
+  /** Rows whose movement is unavailable from either evidence. */
+  excludedCount: number;
+} {
+  const sorted = [...lines].sort(
+    (a, b) => a.pageNumber - b.pageNumber || a.rowNumber - b.rowNumber,
+  );
+  const deposits: string[] = [];
+  const withdrawals: string[] = [];
+  let derivedMovement = "0.00";
+  let derivedCount = 0;
+  let excludedCount = 0;
+  let lastPrinted: string | null = null;
+  let chainCountedWithoutPrint = false;
+
+  for (const line of sorted) {
+    const amount = countableAmount(line);
+    if (amount) {
+      if (amount.side === "deposit") deposits.push(amount.value);
+      else withdrawals.push(amount.value);
+      if (line.closingBalance) {
+        lastPrinted = line.closingBalance;
+        chainCountedWithoutPrint = false;
+      } else {
+        chainCountedWithoutPrint = true;
+      }
+      continue;
+    }
+
+    if (line.closingBalance && lastPrinted !== null && !chainCountedWithoutPrint) {
+      derivedMovement = decimalAdd(
+        derivedMovement,
+        decimalSubtract(line.closingBalance, lastPrinted),
+      );
+      derivedCount += 1;
+      lastPrinted = line.closingBalance;
+    } else {
+      excludedCount += 1;
+    }
+    if (line.closingBalance) {
+      lastPrinted = line.closingBalance;
+      chainCountedWithoutPrint = false;
+    }
+  }
+
+  return { deposits, withdrawals, derivedMovement, derivedCount, excludedCount };
+}
+
+/**
  * Reconstructs an opening / closing balance from the per-row printed balances
  * when the statement metadata has none of its own:
  *
@@ -198,21 +270,12 @@ export function reconcileStatementDetail(
   const counts = { pending: 0, ready: 0, imported: 0, skipped: 0, duplicate: 0, error: 0 };
   for (const line of lines) counts[line.status] += 1;
 
-  const deposits: string[] = [];
-  const withdrawals: string[] = [];
-  let invalidLineCount = 0;
-  for (const line of lines) {
-    const amount = countableAmount(line);
-    if (!amount) {
-      invalidLineCount += 1;
-      continue;
-    }
-    if (amount.side === "deposit") deposits.push(amount.value);
-    else withdrawals.push(amount.value);
-  }
-
-  const depositsTotal = sum(deposits, "0.00");
-  const withdrawalsTotal = sum(withdrawals, "0.00");
+  const movements = classifyMovements(lines);
+  const depositsTotal = sum(movements.deposits, "0.00");
+  const withdrawalsTotal = sum(movements.withdrawals, "0.00");
+  const derivedMovement = movements.derivedMovement;
+  const derivedMovementCount = movements.derivedCount;
+  const invalidLineCount = movements.excludedCount;
 
   // Declared state first; the row balance chain only fills what is missing.
   const derivedBalances =
@@ -238,6 +301,11 @@ export function reconcileStatementDetail(
       `${invalidLineCount} row${invalidLineCount === 1 ? "" : "s"} cannot be counted; they are excluded from the balance check.`,
     );
   }
+  if (derivedMovementCount > 0) {
+    notes.push(
+      `Movement of ${derivedMovementCount} row${derivedMovementCount === 1 ? "" : "s"} taken from the printed balance chain (${decimalAbs(derivedMovement)} net); their amount cells are not countable.`,
+    );
+  }
   const unresolvedCount = counts.pending + counts.error;
   if (unresolvedCount > 0) {
     warnings.push(
@@ -261,7 +329,10 @@ export function reconcileStatementDetail(
   let difference: string | null = null;
 
   if (openingBalance && closingBalance && !missingInputs) {
-    const movement = decimalSubtract(depositsTotal, withdrawalsTotal);
+    const movement = decimalAdd(
+      decimalSubtract(depositsTotal, withdrawalsTotal),
+      derivedMovement,
+    );
     expectedClosing = decimalAdd(openingBalance, movement);
     difference = decimalSubtract(closingBalance, expectedClosing);
     status = decimalCompare(difference, "0.00") === 0 ? "balanced" : "unbalanced";
@@ -289,6 +360,8 @@ export function reconcileStatementDetail(
     errorCount: counts.error,
     unresolvedCount,
     invalidLineCount,
+    derivedMovement,
+    derivedMovementCount,
     warnings,
     notes,
     overlappingStatements,
