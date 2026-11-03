@@ -31,6 +31,7 @@ import {
 } from "@/lib/db/schema";
 import { parseExactDecimalToBigInt } from "@/lib/currency/precision";
 import { computeCanonicalPayloadHash } from "@/lib/transactions/persist";
+import { finalizeStatementStatuses } from "./statement-sync";
 import { normalizeNarration } from "./normalize";
 import { validateLineForImport, validateImportDirection } from "./validate";
 import { effectiveLineFlags } from "./review";
@@ -808,35 +809,7 @@ export async function importStatementLines(
  * statement status always matches its line states.
  */
 export async function finalizeStatement(statementId: string): Promise<StatementStatus> {
-  const counts = (await db.execute(sql`
-    SELECT
-      count(*) FILTER (WHERE status = 'pending')::int AS "pendingCount",
-      count(*) FILTER (WHERE status = 'ready')::int AS "readyCount",
-      count(*) FILTER (WHERE status = 'error')::int AS "errorCount"
-    FROM bank_statement_lines
-    WHERE statement_id = ${statementId}::uuid
-  `)).rows[0] as unknown as
-    | { pendingCount: number; readyCount: number; errorCount: number }
-    | undefined;
-
-  const complete =
-    !!counts &&
-    Number(counts.pendingCount) === 0 &&
-    Number(counts.readyCount) === 0 &&
-    Number(counts.errorCount) === 0;
-
-  const target: string = complete ? "completed" : "review";
-  const updated = await db.execute(sql`
-    UPDATE bank_statements
-    SET status = ${target},
-        completed_at = CASE WHEN ${complete} THEN coalesce(completed_at, now()) ELSE completed_at END,
-        updated_at = now()
-    WHERE id = ${statementId}::uuid AND status = 'importing'
-    RETURNING status
-  `);
-
-  const status = (updated.rows[0] as unknown as { status?: string } | undefined)?.status;
-  return (status as StatementStatus) ?? "importing";
+  return db.transaction((tx) => finalizeStatementStatuses(tx, statementId, ["importing"]));
 }
 
 // ─── Audited restoration ─────────────────────────────────────────────────────

@@ -40,6 +40,7 @@ import {
   logSafeDbConstraintError,
   logSafeDbError,
 } from "./safe-log";
+import { finalizeStatementStatuses } from "./statement-sync";
 
 export type ReviewResult = { ok: true } | { ok: false; error: string };
 
@@ -806,11 +807,6 @@ export async function skipLine(
         })
         .where(eq(bankStatementLines.id, line.id));
 
-      await tx
-        .update(bankStatements)
-        .set({ updatedAt: new Date() })
-        .where(eq(bankStatements.id, statementId));
-
       await tx.insert(auditEvents).values({
         entityType: "bank_statement_line",
         entityId: line.id,
@@ -821,6 +817,11 @@ export async function skipLine(
         afterState: auditLineState({ ...line, status: "skipped", reviewedBy: userId }),
         metadata: { reason },
       });
+
+      // The statement status always mirrors its line states (same predicate
+      // the import batch uses): resolving the last unresolved row completes
+      // the statement without needing an import batch afterwards.
+      await finalizeStatementStatuses(tx, statementId, ["review"]);
 
       return { ok: true } satisfies ReviewResult;
     });
@@ -880,11 +881,6 @@ export async function markLineDuplicate(
         })
         .where(eq(bankStatementLines.id, line.id));
 
-      await tx
-        .update(bankStatements)
-        .set({ updatedAt: new Date() })
-        .where(eq(bankStatements.id, statementId));
-
       await tx.insert(auditEvents).values({
         entityType: "bank_statement_line",
         entityId: line.id,
@@ -894,6 +890,10 @@ export async function markLineDuplicate(
         beforeState: auditLineState(line),
         afterState: auditLineState({ ...line, status: "duplicate", reviewedBy: userId }),
       });
+
+      // Same mirror-the-line-states rule as skipLine: the last decision on the
+      // statement completes it; an unresolved remainder keeps it in review.
+      await finalizeStatementStatuses(tx, statementId, ["review"]);
 
       return { ok: true } satisfies ReviewResult;
     });
@@ -1114,10 +1114,9 @@ export async function markLinesDuplicate(
       }
 
       if (marked > 0) {
-        await tx
-          .update(bankStatements)
-          .set({ updatedAt: now })
-          .where(eq(bankStatements.id, rawStatementId));
+        // finalizeStatementStatuses keeps updated_at fresh in both targets,
+        // so the single updatedAt update covers the not-complete case too.
+        await finalizeStatementStatuses(tx, rawStatementId, ["review"]);
       }
 
       return {

@@ -25,6 +25,7 @@ import {
   type ImportBatchResult,
   type ImportInvoiceOption,
 } from "@/lib/bank-import/import";
+import { reopenStatementWithDeadImports } from "@/lib/bank-import/statement-sync";
 import {
   convertLinesPositive,
   markLineDuplicate,
@@ -273,6 +274,27 @@ export async function restoreImportAction(
   return result;
 }
 
+const STATEMENT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Reopens a `completed` statement whose imports were deleted in the ledger
+ * outside the staging flow (e.g. while the automatic sync was not yet in
+ * place). The old `completed` claim had already lost its truth; this hands
+ * the statement back to review so the rows can be restored or re-imported.
+ */
+export async function reopenStatementAction(statementId: unknown): Promise<ReviewResult> {
+  const guard = await guardBankImport();
+  if (!guard.ok) return { ok: false, error: guard.reason };
+
+  if (typeof statementId !== "string" || !STATEMENT_UUID.test(statementId)) {
+    return { ok: false, error: "This statement could not be resolved." };
+  }
+
+  const result = await reopenStatementWithDeadImports(guard.userId, statementId);
+  if (result.ok) refresh();
+  return result;
+}
+
 /** Open INR invoices of one client for the review picker (safe option labels). */
 export async function listInvoiceOptionsAction(
   clientId: string,
@@ -365,7 +387,9 @@ export async function deleteStatementAction(
       (entry) => entry.txId,
     );
     for (const txId of importedTxIds) {
-      const result = await deleteTransaction(guard.userId, txId, "bank_import");
+      // syncStatement=false: this flow deletes the statement's staging rows
+      // right after the transactions, so the demote-to-review sync is noise.
+      const result = await deleteTransaction(guard.userId, txId, "bank_import", false);
       if (!result.ok && result.error !== "This transaction was already deleted.") {
         return { ok: false, error: result.error, blocked: true };
       }
