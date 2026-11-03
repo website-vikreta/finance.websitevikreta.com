@@ -76,6 +76,32 @@ const nextConfig = (phase: string): NextConfig => ({
   // resolve them the way a plain Node require does. See
   // lib/bank-import/pdf.ts "PDF libraries load lazily".
   serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
+  /*
+   * Node's trace follows imports only, and pdfjs-dist loads its parsing core
+   * by dynamic-importing `pdf.worker.mjs` RESOLVED FROM ITS OWN FILE at
+   * runtime (`GlobalWorkerOptions.workerSrc ||= "./pdf.worker.mjs"` in the
+   * legacy build). The file itself is next to `pdf.mjs`, which IS traced, so
+   * the worker resolves correctly once the packaged files land adjacent in
+   * the function — no worker-path pinning needed. Without these includes the
+   * deployed function bundles `pdf.mjs` but nothing else: the fake-worker
+   * setup rejects and every upload maps to "This file is not a readable
+   * PDF" (cdf/cmaps/standard_fonts are fallback-only but tiny and load the
+   * same dynamic way; pdf-parse ships a separate ESM build the CJS entry
+   * delegates to).
+   */
+  outputFileTracingIncludes: {
+    "/api/bank-connections/upload": [
+      "./node_modules/pdfjs-dist/legacy/build/pdf.mjs",
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./node_modules/pdfjs-dist/package.json",
+      "./node_modules/pdfjs-dist/standard_fonts/**",
+      "./node_modules/pdfjs-dist/cmaps/**",
+      "./node_modules/pdfjs-dist/wasm/**",
+      "./node_modules/pdfjs-dist/iccs/**",
+      "./node_modules/pdf-parse/dist/pdf-parse/esm/**",
+      "./node_modules/pdf-parse/package.json",
+    ],
+  },
   turbopack: {
     rules: {
       "*.css": {
