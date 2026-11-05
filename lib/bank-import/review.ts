@@ -23,10 +23,13 @@ import {
 } from "@/lib/db/schema";
 import {
   collapseWhitespace,
+  decimalCompare,
+  decimalNegate,
   fingerprintLine,
   normalizeNarration,
 } from "./normalize";
 import { validateLineForImport, validateImportDirection } from "./validate";
+import { findLedgerCandidatesForLine } from "./duplicates";
 import {
   CLASSIFICATIONS,
   type Classification,
@@ -38,6 +41,7 @@ import {
   logSafeDbConstraintError,
   logSafeDbError,
 } from "./safe-log";
+import { finalizeStatementStatuses } from "./statement-sync";
 
 export type ReviewResult = { ok: true } | { ok: false; error: string };
 
@@ -128,7 +132,7 @@ interface LineRaw {
 function isLineFlag(value: unknown): value is LineFlag {
   return (
     typeof value === "string" &&
-    /^(INVALID_DATE|AMBIGUOUS_DATE|TWO_DIGIT_YEAR|MISSING_DATE|INVALID_VALUE_DATE|MISSING_NARRATION|INVALID_AMOUNT|ZERO_AMOUNT|NEGATIVE_AMOUNT|MISSING_AMOUNT|BOTH_AMOUNTS|UNKNOWN_DIRECTION|DIRECTION_CONFLICT|INVALID_BALANCE|COLUMN_COUNT_MISMATCH|UNRECOGNIZED_ROW|TRANSFER|REFUND|REVERSAL|AMBIGUOUS_ENTRY|CASH_MOVEMENT|BANK_CHARGE)$/.test(
+    /^(INVALID_DATE|AMBIGUOUS_DATE|TWO_DIGIT_YEAR|MISSING_DATE|INVALID_VALUE_DATE|MISSING_NARRATION|INVALID_AMOUNT|ZERO_AMOUNT|NEGATIVE_AMOUNT|MISSING_AMOUNT|BOTH_AMOUNTS|UNKNOWN_DIRECTION|DIRECTION_CONFLICT|INVALID_BALANCE|COLUMN_COUNT_MISMATCH|UNRECOGNIZED_ROW|TRANSFER|REFUND|REVERSAL|AMBIGUOUS_ENTRY|CASH_MOVEMENT|BANK_CHARGE|NOT_A_DUPLICATE)$/.test(
       value,
     )
   );
@@ -804,11 +808,6 @@ export async function skipLine(
         })
         .where(eq(bankStatementLines.id, line.id));
 
-      await tx
-        .update(bankStatements)
-        .set({ updatedAt: new Date() })
-        .where(eq(bankStatements.id, statementId));
-
       await tx.insert(auditEvents).values({
         entityType: "bank_statement_line",
         entityId: line.id,
@@ -819,6 +818,11 @@ export async function skipLine(
         afterState: auditLineState({ ...line, status: "skipped", reviewedBy: userId }),
         metadata: { reason },
       });
+
+      // The statement status always mirrors its line states (same predicate
+      // the import batch uses): resolving the last unresolved row completes
+      // the statement without needing an import batch afterwards.
+      await finalizeStatementStatuses(tx, statementId, ["review"]);
 
       return { ok: true } satisfies ReviewResult;
     });
@@ -878,11 +882,6 @@ export async function markLineDuplicate(
         })
         .where(eq(bankStatementLines.id, line.id));
 
-      await tx
-        .update(bankStatements)
-        .set({ updatedAt: new Date() })
-        .where(eq(bankStatements.id, statementId));
-
       await tx.insert(auditEvents).values({
         entityType: "bank_statement_line",
         entityId: line.id,
@@ -893,11 +892,103 @@ export async function markLineDuplicate(
         afterState: auditLineState({ ...line, status: "duplicate", reviewedBy: userId }),
       });
 
+      // Same mirror-the-line-states rule as skipLine: the last decision on the
+      // statement completes it; an unresolved remainder keeps it in review.
+      await finalizeStatementStatuses(tx, statementId, ["review"]);
+
       return { ok: true } satisfies ReviewResult;
     });
   } catch (error) {
     logSafeDbError("markLineDuplicate", error);
     return { ok: false, error: "Marking the duplicate failed. Try again." };
+  }
+}
+
+/**
+ * Records the reviewer's explicit "not a duplicate" decision.
+ *
+ * Some same-day, same-amount matches are legitimate repeated payments. When
+ * the reviewer checks a confirmed or needs-review candidate against the ledger
+ * and decides this row is genuinely new money, the decision is persisted as a
+ * non-blocking flag (`NOT_A_DUPLICATE`) on the staging row and audited. The
+ * import-time duplicate gate respects it for this line only; no status
+ * changes, no financial data moves.
+ */
+export async function acknowledgeLineNotDuplicate(
+  userId: string,
+  statementId: string,
+  lineId: string,
+): Promise<ReviewResult> {
+  if (!UUID_RE.test(statementId) || !UUID_RE.test(lineId)) {
+    return { ok: false, error: "This statement line could not be resolved." };
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      const line = await loadReviewLine(tx, statementId, lineId);
+      if (!line) return { ok: false, error: LINE_NOT_FOUND } satisfies ReviewResult;
+
+      const blocked = transitionError(line, "decide");
+      if (blocked) return { ok: false, error: blocked } satisfies ReviewResult;
+
+      if (line.flags.includes("NOT_A_DUPLICATE")) {
+        return { ok: true } satisfies ReviewResult;
+      }
+
+      // The decision must answer an actual candidate: recompute the ledger
+      // matches for this line inside the same transaction, so a stale review
+      // screen can never acknowledge a match that no longer exists.
+      const candidates = await findLedgerCandidatesForLine(tx, {
+        lineId: line.id,
+        statementId: line.statementId,
+        txnDate: line.txnDate,
+        withdrawalAmount: line.withdrawalAmount,
+        depositAmount: line.depositAmount,
+        narration: line.narration,
+        businessDescription: line.businessDescription ?? null,
+        clientId: line.clientId,
+        categoryId: line.categoryId,
+      });
+      const needsDecision = candidates.some(
+        (candidate) => candidate.severity === "strong" || candidate.severity === "review",
+      );
+      if (!needsDecision) {
+        return {
+          ok: false,
+          error:
+            "No duplicate candidate needs a decision on this row. Refresh the review and try again.",
+        } satisfies ReviewResult;
+      }
+
+      const afterFlags: LineFlag[] = [...line.flags, "NOT_A_DUPLICATE"];
+      await tx
+        .update(bankStatementLines)
+        .set({
+          flags: afterFlags,
+          updatedAt: new Date(),
+        })
+        .where(eq(bankStatementLines.id, line.id));
+
+      await tx
+        .update(bankStatements)
+        .set({ updatedAt: new Date() })
+        .where(eq(bankStatements.id, statementId));
+
+      await tx.insert(auditEvents).values({
+        entityType: "bank_statement_line",
+        entityId: line.id,
+        action: "duplicate_acknowledged",
+        performedBy: userId,
+        source: "bank_import",
+        beforeState: auditLineState(line),
+        afterState: auditLineState({ ...line, flags: afterFlags }),
+      });
+
+      return { ok: true } satisfies ReviewResult;
+    });
+  } catch (error) {
+    logSafeDbError("acknowledgeLineNotDuplicate", error);
+    return { ok: false, error: "Recording the decision failed. Try again." };
   }
 }
 
@@ -1112,10 +1203,9 @@ export async function markLinesDuplicate(
       }
 
       if (marked > 0) {
-        await tx
-          .update(bankStatements)
-          .set({ updatedAt: now })
-          .where(eq(bankStatements.id, rawStatementId));
+        // finalizeStatementStatuses keeps updated_at fresh in both targets,
+        // so the single updatedAt update covers the not-complete case too.
+        await finalizeStatementStatuses(tx, rawStatementId, ["review"]);
       }
 
       return {
@@ -1132,6 +1222,331 @@ export async function markLinesDuplicate(
   } catch (error) {
     logSafeDbError("markLinesDuplicate", error);
     return emptyBatch("Marking the duplicates failed. Try again.", deduped.length);
+  }
+}
+
+// ─── Bulk positive conversion ────────────────────────────────────────────────
+
+/**
+ * Upper bound for one bulk "Convert − to +" action; mirrors the duplicate and
+ * import batch caps.
+ */
+export const CONVERT_MAX_BATCH = 100;
+
+export interface ConvertPositiveFailure {
+  lineId: string;
+  rowNumber: number;
+  error: string;
+}
+
+export interface ConvertPositiveResult {
+  ok: boolean;
+  /** Batch-level error (unknown statement, wrong state, no lines). */
+  error: string | null;
+  requested: number;
+  /** Rows whose amount sign was flipped (ready or still pending). */
+  converted: number;
+  /** Converted rows that validate immediately: status moved to `ready`. */
+  readyNow: number;
+  failed: number;
+  statementStatus: string | null;
+  failures: ConvertPositiveFailure[];
+}
+
+/**
+ * Decides what the convert-positive action can do with one selected row.
+ * Pure policy, shared by the bulk executor and the offline checks:
+ * only a `pending` row flagged `NEGATIVE_AMOUNT` with exactly one amount side
+ * holding a negative value can flip its sign. Zero and positive amounts keep
+ * their own review path, and a deferred decision needs Reopen.
+ */
+export function convertPositiveDecision(
+  lineStatus: LineStatus,
+  statementStatus: string,
+  flags: readonly unknown[],
+  withdrawalAmount: string | null,
+  depositAmount: string | null,
+): { action: "convert" } | { action: "reject"; error: string } {
+  if (statementStatus !== "review") {
+    return { action: "reject", error: STATEMENT_NOT_REVIEWABLE };
+  }
+  if (lineStatus === "imported") return { action: "reject", error: IMPORTED_LOCKED };
+  if (lineStatus === "error") return { action: "reject", error: ERROR_LOCKED };
+  if (lineStatus !== "pending") {
+    return { action: "reject", error: NEEDS_REOPEN };
+  }
+  if (!flags.includes("NEGATIVE_AMOUNT")) {
+    return { action: "reject", error: "Only a row flagged NEGATIVE_AMOUNT can be converted." };
+  }
+  if (withdrawalAmount != null && depositAmount != null) {
+    return { action: "reject", error: "This row has both amount columns filled." };
+  }
+  const amount = withdrawalAmount ?? depositAmount;
+  if (amount == null) {
+    return { action: "reject", error: "This row has no amount to convert." };
+  }
+  const sign = decimalCompare(amount, "0.00");
+  if (sign === 0) {
+    return { action: "reject", error: "Zero amounts cannot be converted; skip the row instead." };
+  }
+  if (sign > 0) {
+    return { action: "reject", error: "Only a negative amount can be converted." };
+  }
+  return { action: "convert" };
+}
+
+interface ConvertLineRaw {
+  id: string;
+  rowNumber: number | string;
+  status: string;
+  statementStatus: string;
+  classification: string;
+  txnDate: string | null;
+  valueDate: string | null;
+  narration: string | null;
+  reference: string | null;
+  withdrawalAmount: string | null;
+  depositAmount: string | null;
+  direction: string | null;
+  flags: unknown;
+  clientId: string | null;
+  categoryId: number | null;
+  invoiceId: string | null;
+  skipReason: string | null;
+  reviewedBy: string | null;
+}
+
+/**
+ * Flips the amount sign on many selected `NEGATIVE_AMOUNT` rows in one pass:
+ * the negative side is negated (exact decimal-string arithmetic), the flag is
+ * removed and the fingerprint is recomputed. Each row is then re-validated
+ * like a reviewer save: lines that fully validate become `ready`, the rest
+ * stay pending with their remaining blockers untouched. One transaction locks
+ * the statement and every requested line, so concurrent reviewers serialize.
+ * Audit events carry staging state only — never amounts or narration.
+ */
+export async function convertLinesPositive(
+  userId: string,
+  rawStatementId: unknown,
+  rawLineIds: unknown,
+): Promise<ConvertPositiveResult> {
+  const emptyBatch = (error: string, requested = 0): ConvertPositiveResult => ({
+    ok: false,
+    error,
+    requested,
+    converted: 0,
+    readyNow: 0,
+    failed: 0,
+    statementStatus: null,
+    failures: [],
+  });
+
+  if (typeof rawStatementId !== "string" || !UUID_RE.test(rawStatementId)) {
+    return emptyBatch("This statement could not be resolved.");
+  }
+  if (!Array.isArray(rawLineIds) || rawLineIds.length === 0) {
+    return emptyBatch("Select at least one row to convert.");
+  }
+  if (rawLineIds.length > CONVERT_MAX_BATCH) {
+    return emptyBatch(
+      `Convert at most ${CONVERT_MAX_BATCH} rows per batch.`,
+      rawLineIds.length,
+    );
+  }
+  const deduped = [...new Set(rawLineIds)];
+  if (deduped.some((id) => typeof id !== "string" || !UUID_RE.test(id))) {
+    return emptyBatch(
+      "Some selected rows could not be resolved. Refresh and try again.",
+      rawLineIds.length,
+    );
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      // Lock the requested lines together with their statement in one
+      // statement, mirroring `markLinesDuplicate`'s `FOR UPDATE OF` ordering.
+      const loaded = await tx
+        .select({
+          id: bankStatementLines.id,
+          rowNumber: bankStatementLines.rowNumber,
+          status: bankStatementLines.status,
+          statementStatus: bankStatements.status,
+          classification: bankStatementLines.classification,
+          txnDate: sql<
+            string | null
+          >`to_char(${bankStatementLines.txnDate}, 'YYYY-MM-DD')`,
+          valueDate: sql<
+            string | null
+          >`to_char(${bankStatementLines.valueDate}, 'YYYY-MM-DD')`,
+          narration: bankStatementLines.narration,
+          reference: bankStatementLines.reference,
+          withdrawalAmount: sql<string | null>`${bankStatementLines.withdrawalAmount}::text`,
+          depositAmount: sql<string | null>`${bankStatementLines.depositAmount}::text`,
+          direction: bankStatementLines.direction,
+          flags: bankStatementLines.flags,
+          clientId: bankStatementLines.clientId,
+          categoryId: bankStatementLines.categoryId,
+          invoiceId: bankStatementLines.invoiceId,
+          skipReason: bankStatementLines.skipReason,
+          reviewedBy: bankStatementLines.reviewedBy,
+        })
+        .from(bankStatementLines)
+        .innerJoin(bankStatements, eq(bankStatements.id, bankStatementLines.statementId))
+        .where(
+          and(
+            eq(bankStatementLines.statementId, rawStatementId),
+            inArray(bankStatementLines.id, deduped),
+          ),
+        )
+        .for("update", { of: [bankStatementLines, bankStatements] });
+      const rows = loaded as unknown as ConvertLineRaw[];
+      if (rows.length === 0) {
+        return emptyBatch("This statement could not be found.", deduped.length);
+      }
+      // Every line of one statement shares the same statement status.
+      const statementStatus = rows[0].statementStatus;
+
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const failures: ConvertPositiveFailure[] = [];
+      const now = new Date();
+      let converted = 0;
+      let readyNow = 0;
+
+      for (const lineId of deduped) {
+        const row = byId.get(lineId);
+        if (!row) {
+          failures.push({ lineId, rowNumber: 0, error: LINE_NOT_FOUND });
+          continue;
+        }
+        const rowNumber = Number(row.rowNumber);
+        const flags: LineFlag[] = Array.isArray(row.flags) ? row.flags.filter(isLineFlag) : [];
+
+        const decision = convertPositiveDecision(
+          row.status as LineStatus,
+          statementStatus,
+          row.flags as readonly unknown[],
+          row.withdrawalAmount,
+          row.depositAmount,
+        );
+        if (decision.action === "reject") {
+          failures.push({ lineId, rowNumber, error: decision.error });
+          continue;
+        }
+
+        // Staging amounts are canonical two-place decimals; a value that
+        // cannot be negated is corrupted per-row state, never a batch
+        // roll-back.
+        let convertedWithdrawal: string | null = null;
+        let convertedDeposit: string | null = null;
+        try {
+          if (row.withdrawalAmount != null) convertedWithdrawal = decimalNegate(row.withdrawalAmount);
+          if (row.depositAmount != null) convertedDeposit = decimalNegate(row.depositAmount);
+        } catch {
+          failures.push({ lineId, rowNumber, error: "The stored amount could not be read." });
+          continue;
+        }
+
+        const classification: Classification = isClassification(row.classification)
+          ? row.classification
+          : "unclassified";
+        const direction =
+          row.direction === "deposit" || row.direction === "withdrawal" ? row.direction : null;
+        const nextFlags = flags.filter((flag) => flag !== "NEGATIVE_AMOUNT");
+
+        // Same gate a reviewer save passes before "ready": content checks
+        // plus the mapping and classification/direction agreement.
+        const validation = validateLineForImport({
+          txnDate: row.txnDate,
+          valueDate: row.valueDate,
+          narration: row.narration,
+          withdrawalAmount: convertedWithdrawal,
+          depositAmount: convertedDeposit,
+          direction,
+          classification,
+          flags: effectiveLineFlags({ narration: row.narration, flags: nextFlags }),
+          clientId: row.clientId,
+          categoryId: row.categoryId,
+        });
+        const directionError = validateImportDirection(direction, classification);
+        const ready = validation.ok && directionError === null;
+        const nextStatus: LineStatus = ready ? "ready" : "pending";
+
+        const nextFingerprint = fingerprintLine({
+          txnDate: row.txnDate,
+          valueDate: row.valueDate,
+          narration: row.narration,
+          reference: row.reference,
+          withdrawalAmount: convertedWithdrawal,
+          depositAmount: convertedDeposit,
+        });
+
+        await tx
+          .update(bankStatementLines)
+          .set({
+            status: nextStatus,
+            withdrawalAmount: convertedWithdrawal,
+            depositAmount: convertedDeposit,
+            flags: nextFlags,
+            fingerprint: nextFingerprint,
+            ...(ready ? { reviewedBy: userId, reviewedAt: now } : {}),
+            updatedAt: now,
+          })
+          .where(eq(bankStatementLines.id, row.id));
+
+        await tx.insert(auditEvents).values({
+          entityType: "bank_statement_line",
+          entityId: row.id,
+          action: "positive_converted",
+          performedBy: userId,
+          source: "bank_import",
+          beforeState: {
+            status: row.status,
+            classification: row.classification,
+            hasClient: row.clientId != null,
+            hasCategory: row.categoryId != null,
+            hasInvoice: row.invoiceId != null,
+            flagCount: flags.length,
+            hasSkipReason: row.skipReason != null,
+            reviewedBy: row.reviewedBy,
+          },
+          afterState: {
+            status: nextStatus,
+            classification: row.classification,
+            hasClient: row.clientId != null,
+            hasCategory: row.categoryId != null,
+            hasInvoice: row.invoiceId != null,
+            flagCount: nextFlags.length,
+            hasSkipReason: row.skipReason != null,
+            reviewedBy: ready ? userId : row.reviewedBy,
+          },
+          metadata: { bulkSelection: true },
+        });
+
+        converted += 1;
+        if (ready) readyNow += 1;
+      }
+
+      if (converted > 0) {
+        await tx
+          .update(bankStatements)
+          .set({ updatedAt: now })
+          .where(eq(bankStatements.id, rawStatementId));
+      }
+
+      return {
+        ok: true,
+        error: null,
+        requested: deduped.length,
+        converted,
+        readyNow,
+        failed: failures.length,
+        statementStatus: null,
+        failures,
+      } satisfies ConvertPositiveResult;
+    });
+  } catch (error) {
+    logSafeDbError("convertLinesPositive", error);
+    return emptyBatch("The conversion failed. Try again.", deduped.length);
   }
 }
 

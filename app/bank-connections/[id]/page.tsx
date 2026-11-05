@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { TrackStatementVisit } from "@/components/bank-import/section-entry";
 import { PageHeader } from "@/components/layout/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { db } from "@/lib/db";
 import {
   StatementDetailScreen,
   StatementSummaryCard,
@@ -14,6 +15,7 @@ import { ReviewTable } from "@/components/bank-import/review-table";
 import { getStatementDetail } from "@/lib/bank-import/queries";
 import { listReviewOptions } from "@/lib/bank-import/review";
 import { findDuplicateCandidates } from "@/lib/bank-import/duplicates";
+import { finalizeStatementStatuses } from "@/lib/bank-import/statement-sync";
 import {
   listOverlappingStatements,
   reconcileStatementDetail,
@@ -26,7 +28,7 @@ interface DetailProps {
 
 async function StatementData({ params }: { params: Promise<{ id: string }> }) {
   const statementId = await params.then((value) => value.id);
-  const detail = await getStatementDetail(statementId);
+  let detail = await getStatementDetail(statementId);
   if (!detail) {
     return (
       <div className="space-y-2">
@@ -42,6 +44,24 @@ async function StatementData({ params }: { params: Promise<{ id: string }> }) {
         </Link>
       </div>
     );
+  }
+
+  // One-time completeness reconcile: a statement whose rows are all imported /
+  // skipped / duplicate but still claims `review` (its last decision landed
+  // before this sync existed) completes here instead of staying stuck forever.
+  // `finalizeStatementStatuses` guards the write with `WHERE status = 'review'`,
+  // so concurrent writers can't race it.
+  if (
+    detail.statement.status === "review" &&
+    detail.statement.pendingCount === 0 &&
+    detail.statement.readyCount === 0 &&
+    detail.statement.errorCount === 0
+  ) {
+    await db.transaction((tx) =>
+      finalizeStatementStatuses(tx, statementId, ["review"]),
+    );
+    const refreshed = await getStatementDetail(statementId);
+    if (refreshed) detail = refreshed;
   }
 
   const period = resolveStatementPeriod(detail);

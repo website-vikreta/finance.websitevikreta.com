@@ -7,6 +7,8 @@
 import assert from "node:assert/strict";
 import {
   bulkDuplicateDecision,
+  convertPositiveDecision,
+  CONVERT_MAX_BATCH,
   effectiveLineFlags,
   evaluateLineEligibility,
   mappingForClassification,
@@ -14,6 +16,7 @@ import {
   reviewSaveFailureMessage,
   type ReviewLine,
 } from "../review";
+import { fingerprintLine } from "../normalize";
 import {
   reconcileStatementDetail,
   resolveStatementPeriod,
@@ -86,6 +89,7 @@ function lineRow(overrides: Partial<StatementLineRow> = {}): StatementLineRow {
     reviewedBy: null,
     reviewedAt: null,
     transactionId: null,
+    transactionDescription: null,
     importAttempt: 0,
     importLive: false,
     ...overrides,
@@ -529,6 +533,150 @@ function detailFixture(
     ),
   );
   ok("reconciliation: overlapping statement periods warn");
+}
+
+// ── Convert positive policy ──────────────────────────────────────────────────
+{
+  // Exactly one amount side flagged negative: both the deposit and the
+  // withdrawal shape convert.
+  assert.deepEqual(
+    convertPositiveDecision("pending", "review", ["NEGATIVE_AMOUNT"], null, "-92.77"),
+    { action: "convert" },
+  );
+  assert.deepEqual(
+    convertPositiveDecision("pending", "review", ["NEGATIVE_AMOUNT"], "-250.00", null),
+    { action: "convert" },
+  );
+  ok("convert: a pending NEGATIVE_AMOUNT row with one negative side converts");
+
+  assert.deepEqual(
+    convertPositiveDecision(
+      "pending",
+      "review",
+      ["MISSING_NARRATION"],
+      null,
+      "-92.77",
+    ),
+    { action: "reject", error: "Only a row flagged NEGATIVE_AMOUNT can be converted." },
+  );
+  ok("convert: the flag is required, other flags keep their own clearing path");
+
+  assert.deepEqual(
+    convertPositiveDecision("pending", "review", ["NEGATIVE_AMOUNT"], "-1.00", "-2.00"),
+    { action: "reject", error: "This row has both amount columns filled." },
+  );
+  assert.deepEqual(
+    convertPositiveDecision("pending", "review", ["NEGATIVE_AMOUNT"], null, null),
+    { action: "reject", error: "This row has no amount to convert." },
+  );
+  ok("convert: the one-side rule blocks both-amounts and no-amount rows");
+
+  assert.deepEqual(
+    convertPositiveDecision("pending", "review", ["NEGATIVE_AMOUNT", "ZERO_AMOUNT"], null, "0.00"),
+    { action: "reject", error: "Zero amounts cannot be converted; skip the row instead." },
+  );
+  assert.deepEqual(
+    convertPositiveDecision("pending", "review", ["NEGATIVE_AMOUNT"], null, "92.77"),
+    { action: "reject", error: "Only a negative amount can be converted." },
+  );
+  ok("convert: zero and positive amounts keep their ordinary review decision");
+
+  assert.deepEqual(
+    convertPositiveDecision("ready", "review", ["NEGATIVE_AMOUNT"], null, "-92.77"),
+    { action: "reject", error: "Reopen this line before changing the review decision." },
+  );
+  assert.deepEqual(
+    convertPositiveDecision("skipped", "review", ["NEGATIVE_AMOUNT"], null, "-92.77"),
+    { action: "reject", error: "Reopen this line before changing the review decision." },
+  );
+  assert.deepEqual(
+    convertPositiveDecision("duplicate", "review", ["NEGATIVE_AMOUNT"], null, "-92.77"),
+    { action: "reject", error: "Reopen this line before changing the review decision." },
+  );
+  assert.deepEqual(
+    convertPositiveDecision("imported", "review", ["NEGATIVE_AMOUNT"], null, "-92.77"),
+    { action: "reject", error: "Imported lines can no longer be changed." },
+  );
+  assert.deepEqual(
+    convertPositiveDecision("error", "review", ["NEGATIVE_AMOUNT"], null, "-92.77"),
+    { action: "reject", error: "This line does not parse; review is not available for it." },
+  );
+  ok("convert: only pending rows convert; every other status keeps its own path");
+
+  for (const statementStatus of ["importing", "completed", "failed", "cancelled"]) {
+    assert.deepEqual(convertPositiveDecision("pending", statementStatus, ["NEGATIVE_AMOUNT"], null, "-92.77"), {
+      action: "reject",
+      error: "This statement can no longer be reviewed.",
+    });
+  }
+  ok("convert: statements outside review reject the whole decision");
+
+  assert.equal(CONVERT_MAX_BATCH, 100);
+  ok("convert: the batch cap mirrors the duplicate and import caps");
+}
+
+// ── Convert positive readiness (pure eligibility on converted values) ────────
+{
+  // After the executor's change (amount negated, flag removed, fingerprint
+  // recomputed), readiness is the same gate a reviewer save passes.
+  const negatedFingerprint = fingerprintLine({
+    txnDate: "2026-04-13",
+    valueDate: "2026-04-13",
+    narration: "UPI/P2A/ACME",
+    reference: "REF1",
+    withdrawalAmount: null,
+    depositAmount: "-92.77",
+  });
+  const positiveFingerprint = fingerprintLine({
+    txnDate: "2026-04-13",
+    valueDate: "2026-04-13",
+    narration: "UPI/P2A/ACME",
+    reference: "REF1",
+    withdrawalAmount: null,
+    depositAmount: "92.77",
+  });
+  assert.notEqual(negatedFingerprint, positiveFingerprint);
+  ok("convertReady: the fingerprint changes with the sign so duplicates still key on truth");
+
+  const readyIncome = evaluateLineEligibility(
+    reviewLine({ classification: "income", clientId: UUID_A, depositAmount: "92.77", flags: [] }),
+  );
+  assert.ok(readyIncome.ready);
+  assert.deepEqual(readyIncome.blockers, []);
+  ok("convertReady: a converted deposit with a client is ready now");
+
+  const noClient = evaluateLineEligibility(
+    reviewLine({ classification: "income", clientId: null, depositAmount: "92.77", flags: [] }),
+  );
+  assert.ok(!noClient.ready, "converted but no client stays pending");
+  assert.equal(noClient.blockers.length, 1);
+  ok("convertReady: a converted income line without a client converts but stays pending");
+
+  const noCategory = evaluateLineEligibility(
+    reviewLine({
+      classification: "expense",
+      categoryId: null,
+      withdrawalAmount: "250.00",
+      depositAmount: null,
+      direction: "withdrawal",
+      flags: [],
+    }),
+  );
+  assert.ok(!noCategory.ready);
+  ok("convertReady: a converted withdrawal without a category converts but stays pending");
+
+  const remainingFlag = evaluateLineEligibility(
+    reviewLine({
+      classification: "income",
+      clientId: UUID_A,
+      depositAmount: "92.77",
+      flags: ["AMBIGUOUS_DATE", "NEGATIVE_AMOUNT"].filter(
+        (flag): flag is LineFlag => flag !== "NEGATIVE_AMOUNT",
+      ),
+    }),
+  );
+  assert.ok(!remainingFlag.ready, "a remaining parser flag still blocks");
+  ok("convertReady: removing NEGATIVE_AMOUNT never clears the other blocking flags");
 }
 
 // ── Period fallback ──────────────────────────────────────────────────────────

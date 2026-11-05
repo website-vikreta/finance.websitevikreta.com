@@ -31,9 +31,17 @@ import {
 } from "@/lib/db/schema";
 import { parseExactDecimalToBigInt } from "@/lib/currency/precision";
 import { computeCanonicalPayloadHash } from "@/lib/transactions/persist";
+import { finalizeStatementStatuses } from "./statement-sync";
 import { normalizeNarration } from "./normalize";
 import { validateLineForImport, validateImportDirection } from "./validate";
 import { effectiveLineFlags } from "./review";
+import {
+  importDuplicateBlockError,
+} from "./duplicate-evidence";
+import {
+  findLedgerCandidatesForLine,
+  stagingCanonicalMatchKey,
+} from "./duplicates";
 import type {
   Classification,
   LineFlag,
@@ -193,6 +201,10 @@ interface ImportLineRow {
   withdrawalAmount: string | null;
   depositAmount: string | null;
   direction: "deposit" | "withdrawal" | null;
+  /** Exact printed content key; shared with the same-statement import gate. */
+  fingerprint: string;
+  /** Printed reference, needed for the canonical content key. */
+  reference: string | null;
   flags: LineFlag[];
   clientId: string | null;
   categoryId: number | null;
@@ -205,7 +217,7 @@ interface ImportLineRow {
 }
 
 const FLAG_PATTERN =
-  /^(INVALID_DATE|AMBIGUOUS_DATE|TWO_DIGIT_YEAR|MISSING_DATE|INVALID_VALUE_DATE|MISSING_NARRATION|INVALID_AMOUNT|ZERO_AMOUNT|NEGATIVE_AMOUNT|MISSING_AMOUNT|BOTH_AMOUNTS|UNKNOWN_DIRECTION|DIRECTION_CONFLICT|INVALID_BALANCE|COLUMN_COUNT_MISMATCH|UNRECOGNIZED_ROW|TRANSFER|REFUND|REVERSAL|AMBIGUOUS_ENTRY|CASH_MOVEMENT|BANK_CHARGE)$/;
+  /^(INVALID_DATE|AMBIGUOUS_DATE|TWO_DIGIT_YEAR|MISSING_DATE|INVALID_VALUE_DATE|MISSING_NARRATION|INVALID_AMOUNT|ZERO_AMOUNT|NEGATIVE_AMOUNT|MISSING_AMOUNT|BOTH_AMOUNTS|UNKNOWN_DIRECTION|DIRECTION_CONFLICT|INVALID_BALANCE|COLUMN_COUNT_MISMATCH|UNRECOGNIZED_ROW|TRANSFER|REFUND|REVERSAL|AMBIGUOUS_ENTRY|CASH_MOVEMENT|BANK_CHARGE|NOT_A_DUPLICATE)$/;
 
 function mapFlag(value: unknown): LineFlag | null {
   return typeof value === "string" && FLAG_PATTERN.test(value) ? (value as LineFlag) : null;
@@ -244,6 +256,8 @@ async function loadImportLine(
       l.withdrawal_amount::text AS "withdrawalAmount",
       l.deposit_amount::text AS "depositAmount",
       l.direction,
+      l.fingerprint,
+      l.reference,
       l.flags,
       l.client_id AS "clientId",
       l.category_id AS "categoryId",
@@ -380,6 +394,60 @@ async function linkedTransactionIsLive(
     LIMIT 1
   `);
   return rows.rows.length > 0;
+}
+
+// ─── Duplicate revalidation (spec §7) ────────────────────────────────────────
+
+interface SameStatementImportedRow {
+  txnDate: string | null;
+  fingerprint: string;
+  reference: string | null;
+  withdrawalAmount: string | null;
+  depositAmount: string | null;
+}
+
+/**
+ * Blocks a row whose content is already imported from ANOTHER row of the same
+ * statement — by exact fingerprint, or by the printed-differently canonical
+ * identity (reference + date + signed amount + direction). Two rows of one
+ * statement must never both become separate transactions for one bank entry.
+ *
+ * Same-statement matches are invisible to the ledger gate below on purpose:
+ * those transactions belong to THIS statement, and the ledger candidate query
+ * excludes them so no statement line ever flags its own import. The residual
+ * cross-request race (two different rows imported at the same instant in two
+ * requests) is serialized by the per-line lock within one request and is
+ * caught on the next attempt; batch imports run lines sequentially.
+ */
+async function findSameStatementImportedContent(
+  tx: DbTx,
+  line: ImportLineRow,
+): Promise<string | null> {
+  if (!line.txnDate) return null;
+  const rows = await tx.execute(sql`
+    SELECT
+      to_char(o.txn_date, 'YYYY-MM-DD') AS "txnDate",
+      o.fingerprint,
+      o.reference,
+      o.withdrawal_amount::text AS "withdrawalAmount",
+      o.deposit_amount::text AS "depositAmount"
+    FROM bank_statement_lines o
+    WHERE o.statement_id = ${line.statementId}::uuid
+      AND o.id <> ${line.id}::uuid
+      AND o.status = 'imported'
+      AND o.txn_date = ${line.txnDate}::date
+  `);
+  const imported = rows.rows as unknown as SameStatementImportedRow[];
+  const ownKey = stagingCanonicalMatchKey(line);
+  for (const row of imported) {
+    if (row.fingerprint === line.fingerprint) {
+      return "Another imported row in this statement has the same content. Mark this row as a duplicate instead of importing it.";
+    }
+    if (ownKey && stagingCanonicalMatchKey(row) === ownKey) {
+      return "Another imported row in this statement shows the same reference, date, amount and direction. Mark this row as a duplicate instead of importing it.";
+    }
+  }
+  return null;
 }
 
 async function importOneLine(
@@ -529,6 +597,38 @@ async function importOneLine(
         if (!invoice.ok) {
           return { lineId: line.id, rowNumber: line.rowNumber, ok: false, error: invoice.error };
         }
+      }
+
+      // ── Duplicate revalidation, inside this persistence transaction ────────
+      // (a) Same-statement content: one bank entry must never enter twice
+      //     from two rows of this statement when review was bypassed.
+      // (b) Ledger evidence: a confirmed or needs-review duplicate blocks THIS
+      //     row with its reason; advisory ("possible") matches and an explicit
+      //     reviewer "Not a duplicate" decision allow the import. Independent
+      //     rows keep importing — the error stays per-line.
+      const sameStatementError = await findSameStatementImportedContent(tx, line);
+      if (sameStatementError) {
+        return {
+          lineId: line.id,
+          rowNumber: line.rowNumber,
+          ok: false,
+          error: sameStatementError,
+        };
+      }
+      const ledgerEvidence = await findLedgerCandidatesForLine(tx, {
+        lineId: line.id,
+        statementId: line.statementId,
+        txnDate: line.txnDate,
+        withdrawalAmount: line.withdrawalAmount,
+        depositAmount: line.depositAmount,
+        narration: line.narration,
+        businessDescription: line.businessDescription,
+        clientId: line.clientId,
+        categoryId: line.categoryId,
+      });
+      const duplicateError = importDuplicateBlockError(ledgerEvidence, line.flags);
+      if (duplicateError) {
+        return { lineId: line.id, rowNumber: line.rowNumber, ok: false, error: duplicateError };
       }
 
       // Idempotency attempt: pick the first attempt whose key has no committed
@@ -808,35 +908,7 @@ export async function importStatementLines(
  * statement status always matches its line states.
  */
 export async function finalizeStatement(statementId: string): Promise<StatementStatus> {
-  const counts = (await db.execute(sql`
-    SELECT
-      count(*) FILTER (WHERE status = 'pending')::int AS "pendingCount",
-      count(*) FILTER (WHERE status = 'ready')::int AS "readyCount",
-      count(*) FILTER (WHERE status = 'error')::int AS "errorCount"
-    FROM bank_statement_lines
-    WHERE statement_id = ${statementId}::uuid
-  `)).rows[0] as unknown as
-    | { pendingCount: number; readyCount: number; errorCount: number }
-    | undefined;
-
-  const complete =
-    !!counts &&
-    Number(counts.pendingCount) === 0 &&
-    Number(counts.readyCount) === 0 &&
-    Number(counts.errorCount) === 0;
-
-  const target: string = complete ? "completed" : "review";
-  const updated = await db.execute(sql`
-    UPDATE bank_statements
-    SET status = ${target},
-        completed_at = CASE WHEN ${complete} THEN coalesce(completed_at, now()) ELSE completed_at END,
-        updated_at = now()
-    WHERE id = ${statementId}::uuid AND status = 'importing'
-    RETURNING status
-  `);
-
-  const status = (updated.rows[0] as unknown as { status?: string } | undefined)?.status;
-  return (status as StatementStatus) ?? "importing";
+  return db.transaction((tx) => finalizeStatementStatuses(tx, statementId, ["importing"]));
 }
 
 // ─── Audited restoration ─────────────────────────────────────────────────────
