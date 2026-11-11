@@ -18,7 +18,12 @@ function ok(name: string): void {
   console.log(`  ✓ ${name}`);
 }
 
-const counts = (pending: number, ready: number, error: number) => ({ pending, ready, error });
+const counts = (pending: number, ready: number, error: number, deadImports = 0) => ({
+  pending,
+  ready,
+  error,
+  deadImports,
+});
 
 // ── Completeness predicate (mirrors finalizeStatement) ───────────────────────
 {
@@ -27,6 +32,21 @@ const counts = (pending: number, ready: number, error: number) => ({ pending, re
   assert.equal(canClaimComplete(counts(0, 1, 0)), false);
   assert.equal(canClaimComplete(counts(1, 0, 0)), false);
   ok("policy: completeness means no pending, ready or error line");
+}
+
+// ── Dead imports keep the statement open ─────────────────────────────────────
+{
+  assert.equal(
+    canClaimComplete(counts(0, 0, 0, 1)),
+    false,
+    "an imported row whose ledger transaction was deleted is unresolved",
+  );
+  assert.equal(
+    canClaimComplete(counts(0, 0, 0, 3)),
+    false,
+    "every dead import counts, not just the first",
+  );
+  ok("policy: deleted imports keep a completed claim from returning");
 }
 
 // ── Ledger delete demotes only a completed claim ─────────────────────────────
@@ -69,6 +89,11 @@ const counts = (pending: number, ready: number, error: number) => ({ pending, re
   assert.deepEqual(
     ledgerStatementSyncDecision("review", counts(0, 0, 1), "ledger_restore"),
     { action: "none" },
+  );
+  assert.deepEqual(
+    ledgerStatementSyncDecision("review", counts(0, 0, 0, 1), "ledger_restore"),
+    { action: "none" },
+    "another dead import still blocks completion",
   );
   ok("policy: any unresolved line keeps the statement open after a restore");
 

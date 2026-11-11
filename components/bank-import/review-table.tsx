@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  acknowledgeLineNotDuplicateAction,
   convertLinesPositiveAction,
   createClientAction,
   importLinesAction,
@@ -102,6 +103,26 @@ const CLASSIFICATION_ITEMS = CLASSIFICATIONS.map((value) => ({
 function effectiveFlags(line: { narration: string | null; flags: LineFlag[] }): LineFlag[] {
   if (!line.narration || line.narration.trim() === "") return line.flags;
   return line.flags.filter((flag) => flag !== "MISSING_NARRATION");
+}
+
+/**
+ * Badge tone per candidate: a CONFIRMED ledger duplicate — the identical
+ * transaction from a manual save, Finance AI (chatbot), or an earlier/bank
+ * import statement — reads green, a positively identified match. Staging
+ * candidate pairs keep the warning tone, a needs-review match stays red, and
+ * advisories stay muted.
+ */
+function duplicateBadgeTone(candidate: LineDuplicateCandidate): string {
+  if (candidate.severity === "review") {
+    return "border-destructive/30 bg-destructive/10 text-destructive";
+  }
+  if (candidate.severity === "possible") {
+    return "border-border bg-muted text-muted-foreground";
+  }
+  if (candidate.kind === "transaction_exact" || candidate.kind === "imported_before") {
+    return "border-success/40 bg-success/10 text-success";
+  }
+  return "border-warning/40 bg-warning/15 text-warning";
 }
 
 function isFlagged(line: StatementLineRow): boolean {
@@ -617,6 +638,20 @@ export function ReviewTable({
     }, "Amount converted to positive.");
   }
 
+  /**
+   * Records "I checked this duplicate candidate; the row is new money." The
+   * import gate respects the decision server-side, so the row can import once
+   * its other rules pass. Offered only while a confirmed or needs-review
+   * candidate exists and this line has not acknowledged one already.
+   */
+  function notDuplicateRow(line: StatementLineRow) {
+    run(
+      line.id,
+      () => acknowledgeLineNotDuplicateAction(statementId, line.id),
+      "Recorded as new money — the duplicate block is lifted for this row.",
+    );
+  }
+
   function reopenRow(line: StatementLineRow) {
     run(line.id, () => reopenLineAction(statementId, line.id), "Review reopened.");
   }
@@ -1007,31 +1042,35 @@ export function ReviewTable({
                     <TableCell className="font-mono whitespace-nowrap">
                       {line.valueDate ? formatDate(line.valueDate) : "—"}
                     </TableCell>
-                    <TableCell className="max-w-[16rem]">
+                    <TableCell className="max-w-[16rem] overflow-hidden align-top">
                       <p className="truncate" title={line.narration ?? undefined}>
                         {line.narration || <span className="text-destructive">Missing</span>}
                       </p>
-                      {duplicates.length > 0 ? (
-                        <div className="mt-1 flex flex-wrap gap-1">
+                      {duplicates.length > 0 || activeImport ? (
+                        <div className="mt-1 flex min-w-0 flex-wrap gap-1">
+                          {activeImport ? (
+                            <Badge
+                              variant="outline"
+                              className="text-caption h-auto min-h-5 max-w-full whitespace-normal border-success/40 bg-success/15 text-success"
+                              title="This row was already imported from this statement; retrying cannot create another transaction."
+                            >
+                              Already Imported · This Statement
+                            </Badge>
+                          ) : null}
                           {duplicates.map((candidate, index) => (
                             <Badge
                               key={`${candidate.kind}:${candidate.when ?? ""}:${index}`}
                               variant="outline"
-                              className={`text-caption ${
-                                candidate.severity === "strong"
-                                  ? "border-warning/40 bg-warning/15 text-warning"
-                                  : "border-border bg-muted text-muted-foreground"
-                              }`}
-                              title={candidate.label}
+                              className={`text-caption h-auto min-h-5 max-w-full whitespace-normal text-left ${duplicateBadgeTone(candidate)}`}
+                              title={`${candidate.label} — ${candidate.detail}`}
                             >
-                              {candidate.severity === "strong" ? "Duplicate" : "Possible dup"}
-                              {candidate.when ? ` · ${candidate.when}` : ""}
+                              {candidate.label}
                             </Badge>
                           ))}
                         </div>
                       ) : null}
                     </TableCell>
-                    <TableCell className="max-w-[16rem]">
+                    <TableCell className="max-w-[16rem] overflow-hidden align-top">
                       <p className="truncate" title={line.businessDescription ?? undefined}>
                         {line.businessDescription || <span className="text-muted-foreground">—</span>}
                       </p>
@@ -1425,6 +1464,22 @@ export function ReviewTable({
                                 disabled={Boolean(busyKey) || batchBusy}
                               >
                                 Convert to +
+                              </Button>
+                            ) : null}
+                            {(duplicates.some(
+                              (candidate) =>
+                                candidate.severity === "strong" || candidate.severity === "review",
+                            ) &&
+                              !line.flags.includes("NOT_A_DUPLICATE")) ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                title="Record that you checked the duplicate candidate against the ledger: this row is new money and may import."
+                                onClick={() => notDuplicateRow(line)}
+                                disabled={Boolean(busyKey)}
+                              >
+                                Not a duplicate
                               </Button>
                             ) : null}
                             {line.status === "ready" ? (

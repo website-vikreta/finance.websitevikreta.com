@@ -104,6 +104,14 @@ export const LINE_FLAGS = [
   "AMBIGUOUS_ENTRY",
   "CASH_MOVEMENT",
   "BANK_CHARGE",
+  /**
+   * Reviewer decision, never parser-generated: "I checked the duplicate
+   * candidate against the ledger; this row is new money and may import."
+   * Appended by the review mutation, audited, and respected only by the
+   * import-time duplicate gate — never part of the blocking set (the row must
+   * still pass every other validation rule).
+   */
+  "NOT_A_DUPLICATE",
 ] as const;
 
 export type LineFlag = (typeof LINE_FLAGS)[number];

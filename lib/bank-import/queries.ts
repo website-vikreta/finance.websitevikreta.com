@@ -17,6 +17,7 @@ import {
   type SafeErrorCode,
   type StatementStatus,
 } from "./types";
+import { effectivePeriod } from "./period";
 
 export type { Classification, StatementStatus };
 
@@ -42,8 +43,15 @@ export interface StatementSummary {
   accountName: string;
   fileName: string;
   status: StatementStatus;
+  /** Period printed in the PDF header, kept as uploaded-statement provenance. */
   statementFrom: string | null;
   statementTo: string | null;
+  /** First and last dated row actually present in this upload. */
+  rowFrom: string | null;
+  rowTo: string | null;
+  /** Range shown to managers: row coverage, else the printed header period. */
+  periodFrom: string | null;
+  periodTo: string | null;
   pageCount: number;
   lineCount: number;
   pendingCount: number;
@@ -87,6 +95,8 @@ export interface StatementLineRow {
   reviewedBy: string | null;
   reviewedAt: string | null;
   transactionId: string | null;
+  /** Saved description of the imported transaction (Business Description fallback). */
+  transactionDescription: string | null;
   importAttempt: number;
   /** True when the linked transaction exists and is live (not soft-deleted). */
   importLive: boolean;
@@ -115,6 +125,8 @@ interface StatementRaw {
   status: string;
   statementFrom: string | null;
   statementTo: string | null;
+  rowFrom?: string | null;
+  rowTo?: string | null;
   pageCount: number;
   lineCount: number | string;
   pendingCount: number | string;
@@ -165,6 +177,9 @@ interface StatementLineRaw
 }
 
 function mapSummary(raw: StatementRaw): StatementSummary {
+  const rowFrom = raw.rowFrom ?? null;
+  const rowTo = raw.rowTo ?? null;
+  const period = effectivePeriod(raw, rowFrom, rowTo);
   return {
     id: raw.id,
     accountId: raw.accountId,
@@ -173,6 +188,10 @@ function mapSummary(raw: StatementRaw): StatementSummary {
     status: raw.status as StatementStatus,
     statementFrom: raw.statementFrom,
     statementTo: raw.statementTo,
+    rowFrom,
+    rowTo,
+    periodFrom: period.from,
+    periodTo: period.to,
     pageCount: Number(raw.pageCount) || 0,
     lineCount: Number(raw.lineCount) || 0,
     pendingCount: Number(raw.pendingCount) || 0,
@@ -217,6 +236,8 @@ const STATEMENT_BASE_COLUMNS = sql`
     s.status,
     to_char(s.statement_from, 'YYYY-MM-DD') AS "statementFrom",
     to_char(s.statement_to, 'YYYY-MM-DD') AS "statementTo",
+    to_char(min(coalesce(l.txn_date, l.value_date)), 'YYYY-MM-DD') AS "rowFrom",
+    to_char(max(coalesce(l.txn_date, l.value_date)), 'YYYY-MM-DD') AS "rowTo",
     s.page_count AS "pageCount",
     count(l.id)::int AS "lineCount",
     count(*) FILTER (WHERE l.status = 'pending')::int AS "pendingCount",
@@ -306,6 +327,10 @@ export async function getStatementDetail(id: string): Promise<StatementDetail | 
       l.import_attempt::int AS "importAttempt",
       l.transaction_id AS "transactionId",
       l.imported_payload_hash AS "importedPayloadHash",
+      -- Fallback for completed-statement display: the imported transaction's
+      -- own saved description, used only when the staging line has none. The
+      -- join is the line's own import relation, never a regenerated value.
+      t.description AS "transactionDescription",
       -- Review-workspace pointer state only: the review table needs to know
       -- whether the linked transaction is still live. Staging rows never join
       -- into dashboard, ledger, client, report, or export queries.
@@ -330,11 +355,11 @@ export async function getStatementDetail(id: string): Promise<StatementDetail | 
     categoryId: line.categoryId == null ? null : Number(line.categoryId),
     reviewedAt: line.reviewedAt ?? null,
     transactionId: line.transactionId ?? null,
+    transactionDescription: line.transactionDescription ?? null,
     invoiceId: line.invoiceId ?? null,
     invoiceNumber: line.invoiceNumber ?? null,
     importAttempt: line.importAttempt == null ? 0 : Number(line.importAttempt),
     importLive: line.importLive == null ? false : Boolean(line.importLive),
-    businessDescription: line.businessDescription ?? null,
     // A transaction edited in the ledger after its import drifts from the
     // payload hash the import recorded. Hashes written before the drift are
     // the evidence; a staging row without one never claims "edited".
@@ -344,6 +369,7 @@ export async function getStatementDetail(id: string): Promise<StatementDetail | 
       line.importedPayloadHash != null &&
       line.ledgerPayloadHash != null &&
       line.importedPayloadHash !== line.ledgerPayloadHash,
+    businessDescription: line.businessDescription ?? null,
   }));
 
   return {

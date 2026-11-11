@@ -42,7 +42,7 @@ export function PrintTable({
       <thead>
         <tr className="bg-foreground text-background">
           {head.map((h, i) => (
-            <th key={i} scope="col" className={cn("px-2.5 py-1.5 font-semibold", alignClass(i))}>
+            <th key={i} scope="col" className={cn("px-2.5 py-1.5 font-semibold break-words", alignClass(i))}>
               {h}
             </th>
           ))}
@@ -55,7 +55,7 @@ export function PrintTable({
               <td
                 key={i}
                 className={cn(
-                  "px-2.5 py-1.5 align-top tabular-nums",
+                  "px-2.5 py-1.5 align-top tabular-nums break-words",
                   alignClass(i),
                   i === r.cells.length - 1 && r.negative && "text-destructive",
                 )}

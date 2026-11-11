@@ -2,6 +2,7 @@ import { AlertTriangle, CircleAlert, CircleCheck, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatINR } from "@/lib/format";
+import { formatStatementPeriod } from "@/lib/bank-import/period";
 import type { StatementReconciliation } from "@/lib/bank-import/reconciliation";
 
 const STATUS_META: Record<
@@ -140,10 +141,8 @@ export function ReconciliationCard({
             <ul className="mt-1 space-y-0.5 text-body-sm">
               {reconciliation.overlappingStatements.map((overlap) => (
                 <li key={overlap.id} className="text-muted-foreground">
-                  {overlap.fileName}
-                  {overlap.statementFrom
-                    ? ` · ${overlap.statementFrom} → ${overlap.statementTo ?? "?"}`
-                    : ""}
+                  {overlap.fileName} ·{" "}
+                  {formatStatementPeriod(overlap.statementFrom, overlap.statementTo)}
                 </li>
               ))}
             </ul>
