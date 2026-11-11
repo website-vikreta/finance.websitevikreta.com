@@ -512,11 +512,19 @@ function detailFixture(
     ]),
     [],
   );
-  assert.equal(partialRows.invalidLineCount, 2);
-  assert.ok(partialRows.warnings.some((warning) => warning.includes("2 rows cannot be counted")));
+  // The both-sides row never had a chain anchor, so it stays excluded; the
+  // zero-row derives its −1000 movement from the printed 13000 → 12000 chain
+  // and the check still reports what the columns cannot explain.
+  assert.equal(partialRows.derivedMovementCount, 1);
+  assert.equal(partialRows.derivedMovement, "-1000.00");
+  assert.equal(partialRows.invalidLineCount, 1);
+  assert.ok(partialRows.warnings.some((warning) => warning.includes("1 row cannot be counted")));
+  assert.ok(
+    partialRows.notes.some((note) => note.includes("Movement of 1 row taken from the printed balance chain")),
+  );
   assert.equal(partialRows.status, "unbalanced");
-  assert.equal(partialRows.difference, "3000.00");
-  ok("reconciliation: uncountable rows no longer hide a computable balance check");
+  assert.equal(partialRows.difference, "4000.00");
+  ok("reconciliation: only unanchored rows stay excluded; anchored ones close in through the chain");
 
   const skippedRows = reconcileStatementDetail(
     detailFixture([

@@ -10,6 +10,7 @@ import {
   extractPdfText,
   mapPdfError,
   parseBankStatementPdf,
+  type PdfLibraryLoader,
 } from "../pdf";
 import { BankImportError } from "../types";
 
@@ -156,6 +157,71 @@ async function run(): Promise<void> {
   assert.equal(invalid.code, "INVALID_PDF");
   assert.ok(!invalid.message.includes("secret"));
   ok("pdf: password/error mapping is safe and does not leak parser text");
+
+  // A broken worker import is a host problem, not file content. pdfjs wraps it
+  // as `Setting up fake worker failed: "<reason>".` where the reason names
+  // module paths; the mapped message must say "server, retryable" and leak
+  // none of the path text.
+  const workerSetup = mapPdfError(
+    libraryError(
+      "Error",
+      'Setting up fake worker failed: "Error: Cannot find module \'./pdf.worker.mjs\' imported from legacy/build/pdf.mjs".',
+    ),
+  );
+  assert.equal(workerSetup.code, "PARSER_UNAVAILABLE");
+  assert.equal(workerSetup.message, "The PDF parser could not start on this server. Try again later.");
+  ok("pdf: fake-worker setup failures map to PARSER_UNAVAILABLE without leaking paths");
+
+  // Unknown runtime shapes stay content errors (the file could be malformed
+  // in a way pdfjs did not classify) — only the worker signature switched.
+  const unknown = mapPdfError(libraryError("Error", "unexpected runtime condition"));
+  assert.equal(unknown.code, "INVALID_PDF");
+  ok("pdf: unknown non-worker errors stay INVALID_PDF");
+
+  // ── Host simulation through the loader seam ──
+  // A library that cannot even load is reported as unavailability, whatever
+  // the file contents.
+  const brokenLoader: PdfLibraryLoader = async () => {
+    throw libraryError("Error", "Cannot find module 'pdfjs-dist/legacy/build/pdf.mjs'");
+  };
+  await expectCode(extractPdfText(pdf, {}, brokenLoader), "PARSER_UNAVAILABLE");
+  ok("pdf: unavailable PDF libraries answer PARSER_UNAVAILABLE, not INVALID_PDF");
+
+  // When pdfjs breaks at runtime after loading, text-based parsing degrades
+  // and keeps producing rows (the deployed failure now degrades with a log
+  // instead of killing the upload).
+  const spatialBrokenLoader = (async () => ({
+    getDocument: () => ({
+      promise: Promise.reject(
+        libraryError("Error", 'Setting up fake worker failed: "Cannot find module."'),
+      ),
+      destroy: async () => undefined,
+    }),
+    PDFParse: class FakeParser {
+      constructor(_options: unknown) {
+        void _options;
+      }
+      async getInfo() {
+        return { total: 1 };
+      }
+      async getText() {
+        return {
+          pages: [{ num: 1, text: "DEMO BANK\nDate\tNarration" }],
+        };
+      }
+      async getTable() {
+        return { pages: [] };
+      }
+      async destroy() {
+        return undefined;
+      }
+    },
+  })) as unknown as PdfLibraryLoader;
+  const degraded = await extractPdfText(pdf, {}, spatialBrokenLoader);
+  assert.ok(degraded.text.includes("DEMO BANK"), "text layer still extracted");
+  assert.equal(degraded.pageCount, 1);
+  assert.equal(degraded.tables.length, 0, "spatial tables degrade to the empty fallback");
+  ok("pdf: a broken pdfjs runtime degrades to the unpositioned text path");
 
   assert.equal(DEFAULT_MAX_BYTES, 10 * 1024 * 1024);
   ok("pdf: default byte limit is the approved provisional 10 MB");
