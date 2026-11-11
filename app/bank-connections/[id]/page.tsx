@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { TrackStatementVisit } from "@/components/bank-import/section-entry";
 import { PageHeader } from "@/components/layout/page-header";
+import { StatementExportActions } from "@/components/bank-import/statement-export-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { db } from "@/lib/db";
 import {
@@ -139,6 +140,24 @@ async function StatementData({ params }: { params: Promise<{ id: string }> }) {
   return (
     <>
       <TrackStatementVisit statementId={detail.statement.id} />
+      <div className="space-y-2 print:hidden">
+        <Link
+          href="/bank-connections?list=1"
+          className="inline-flex items-center gap-1.5 text-caption text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-3.5" aria-hidden />
+          Bank connections
+        </Link>
+        <PageHeader
+          title="Statement review"
+          description="Classify staging rows and import approved lines as transactions"
+          action={
+            detail.statement.status === "completed" ? (
+              <StatementExportActions detail={detail} />
+            ) : undefined
+          }
+        />
+      </div>
       {screen}
     </>
   );
@@ -147,7 +166,10 @@ async function StatementData({ params }: { params: Promise<{ id: string }> }) {
 function StatementSkeleton() {
   return (
     <div className="space-y-6">
-      <Skeleton className="h-10 w-48 rounded-xl" />
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-10 w-64 rounded-xl" />
+      </div>
       <Skeleton className="h-64 rounded-xl" />
       <Skeleton className="h-[28rem] rounded-xl" />
     </div>
@@ -158,23 +180,6 @@ export default function StatementDetailPage(props: DetailProps) {
   return (
     <Suspense fallback={<Skeleton className="m-8 h-[48rem] rounded-xl" />}>
       <AppShell>
-        <div className="space-y-2">
-          {/* ?list=1 forces the list and re-remembers it; the plain path
-              would resume the review visited last — often this statement,
-              which would bounce the user straight back here. */}
-          <Link
-            href="/bank-connections?list=1"
-            className="inline-flex items-center gap-1.5 text-caption text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="size-3.5" aria-hidden />
-            Bank connections
-          </Link>
-          <PageHeader
-            title="Statement review"
-            description="Classify staging rows and import approved lines as transactions"
-          />
-        </div>
-
         <Suspense fallback={<StatementSkeleton />}>
           <StatementData params={props.params} />
         </Suspense>
