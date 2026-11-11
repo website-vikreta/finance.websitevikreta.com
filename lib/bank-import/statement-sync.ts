@@ -35,6 +35,11 @@ export interface StatementUnresolvedCounts {
   pending: number;
   ready: number;
   error: number;
+  /**
+   * Imported rows whose ledger transaction was soft-deleted. They cannot be
+   * called settled: the reviewer must restore the row or re-import it.
+   */
+  deadImports: number;
 }
 
 export type LedgerStatementSyncDecision =
@@ -44,10 +49,17 @@ export type LedgerStatementSyncDecision =
 
 /**
  * Completeness predicate, mirroring `finalizeStatement`: a statement may claim
- * `completed` only when no line is pending, ready or error.
+ * `completed` only when no line is pending, ready or error — and no imported
+ * line lost its ledger transaction. Counting a dead import as settled would
+ * let the page's reconcile immediately re-complete a reopened statement.
  */
 export function canClaimComplete(counts: StatementUnresolvedCounts): boolean {
-  return counts.pending === 0 && counts.ready === 0 && counts.error === 0;
+  return (
+    counts.pending === 0 &&
+    counts.ready === 0 &&
+    counts.error === 0 &&
+    counts.deadImports === 0
+  );
 }
 
 /**
@@ -106,7 +118,32 @@ function normalizeCounts(raw: unknown): StatementUnresolvedCounts {
     pending: number(row.pendingCount),
     ready: number(row.readyCount),
     error: number(row.errorCount),
+    deadImports: number(row.deadImportCount),
   };
+}
+
+/**
+ * Reads every reason a statement cannot claim completeness in one query.
+ * "Dead import" means the staging row still says `imported` but its ledger
+ * transaction was soft-deleted — exactly the state the reopen flow exists for.
+ */
+async function loadUnresolvedCounts(
+  tx: DbTx,
+  statementId: string,
+): Promise<StatementUnresolvedCounts> {
+  const countRows = await tx.execute(sql`
+    SELECT
+      count(*) FILTER (WHERE l.status = 'pending')::int AS "pendingCount",
+      count(*) FILTER (WHERE l.status = 'ready')::int AS "readyCount",
+      count(*) FILTER (WHERE l.status = 'error')::int AS "errorCount",
+      count(*) FILTER (
+        WHERE l.status = 'imported' AND t.deleted_at IS NOT NULL
+      )::int AS "deadImportCount"
+    FROM bank_statement_lines l
+    LEFT JOIN transactions t ON t.id = l.transaction_id
+    WHERE l.statement_id = ${statementId}::uuid
+  `);
+  return normalizeCounts(countRows.rows[0]);
 }
 
 /**
@@ -122,15 +159,7 @@ export async function finalizeStatementStatuses(
   statementId: string,
   from: readonly StatementStatus[] = ["importing"],
 ): Promise<StatementStatus> {
-  const countRows = await tx.execute(sql`
-    SELECT
-      count(*) FILTER (WHERE status = 'pending')::int AS "pendingCount",
-      count(*) FILTER (WHERE status = 'ready')::int AS "readyCount",
-      count(*) FILTER (WHERE status = 'error')::int AS "errorCount"
-    FROM bank_statement_lines
-    WHERE statement_id = ${statementId}::uuid
-  `);
-  const counts = normalizeCounts(countRows.rows[0]);
+  const counts = await loadUnresolvedCounts(tx, statementId);
   const complete = canClaimComplete(counts);
   const target: StatementStatus = complete ? "completed" : "review";
   const fromList = sql.join(
@@ -174,7 +203,7 @@ export async function syncStatementForDeletedTransaction(
   for (const { statementId, status } of statements) {
     const decision = ledgerStatementSyncDecision(
       status,
-      { pending: 0, ready: 0, error: 0 },
+      { pending: 0, ready: 0, error: 0, deadImports: 1 },
       "ledger_delete",
     );
     if (decision.action !== "demote") continue;
@@ -213,15 +242,7 @@ export async function syncStatementForRestoredTransaction(
   for (const { statementId, status } of statements) {
     if (status !== "review" && status !== "importing") continue;
 
-    const countRows = await tx.execute(sql`
-      SELECT
-        count(*) FILTER (WHERE status = 'pending')::int AS "pendingCount",
-        count(*) FILTER (WHERE status = 'ready')::int AS "readyCount",
-        count(*) FILTER (WHERE status = 'error')::int AS "errorCount"
-      FROM bank_statement_lines
-      WHERE statement_id = ${statementId}::uuid
-    `);
-    const counts = normalizeCounts(countRows.rows[0]);
+    const counts = await loadUnresolvedCounts(tx, statementId);
 
     const decision = ledgerStatementSyncDecision(status, counts, "ledger_restore");
     if (decision.action !== "promote") continue;

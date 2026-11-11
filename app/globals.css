@@ -230,10 +230,19 @@
     size: A4;
     margin: 0;
   }
+  /* Completed bank statements carry nine columns incl. full narration and
+     business description; landscape keeps every value on the page. */
+  @page bank-statement {
+    size: A4 landscape;
+    margin: 0;
+  }
   .print-document {
     padding: 12mm 14mm;
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
+  }
+  .print-bank-statement {
+    page: bank-statement;
   }
   body {
     background: var(--card);

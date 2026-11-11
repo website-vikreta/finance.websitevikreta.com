@@ -29,6 +29,7 @@ import {
   normalizeNarration,
 } from "./normalize";
 import { validateLineForImport, validateImportDirection } from "./validate";
+import { findLedgerCandidatesForLine } from "./duplicates";
 import {
   CLASSIFICATIONS,
   type Classification,
@@ -131,7 +132,7 @@ interface LineRaw {
 function isLineFlag(value: unknown): value is LineFlag {
   return (
     typeof value === "string" &&
-    /^(INVALID_DATE|AMBIGUOUS_DATE|TWO_DIGIT_YEAR|MISSING_DATE|INVALID_VALUE_DATE|MISSING_NARRATION|INVALID_AMOUNT|ZERO_AMOUNT|NEGATIVE_AMOUNT|MISSING_AMOUNT|BOTH_AMOUNTS|UNKNOWN_DIRECTION|DIRECTION_CONFLICT|INVALID_BALANCE|COLUMN_COUNT_MISMATCH|UNRECOGNIZED_ROW|TRANSFER|REFUND|REVERSAL|AMBIGUOUS_ENTRY|CASH_MOVEMENT|BANK_CHARGE)$/.test(
+    /^(INVALID_DATE|AMBIGUOUS_DATE|TWO_DIGIT_YEAR|MISSING_DATE|INVALID_VALUE_DATE|MISSING_NARRATION|INVALID_AMOUNT|ZERO_AMOUNT|NEGATIVE_AMOUNT|MISSING_AMOUNT|BOTH_AMOUNTS|UNKNOWN_DIRECTION|DIRECTION_CONFLICT|INVALID_BALANCE|COLUMN_COUNT_MISMATCH|UNRECOGNIZED_ROW|TRANSFER|REFUND|REVERSAL|AMBIGUOUS_ENTRY|CASH_MOVEMENT|BANK_CHARGE|NOT_A_DUPLICATE)$/.test(
       value,
     )
   );
@@ -900,6 +901,94 @@ export async function markLineDuplicate(
   } catch (error) {
     logSafeDbError("markLineDuplicate", error);
     return { ok: false, error: "Marking the duplicate failed. Try again." };
+  }
+}
+
+/**
+ * Records the reviewer's explicit "not a duplicate" decision.
+ *
+ * Some same-day, same-amount matches are legitimate repeated payments. When
+ * the reviewer checks a confirmed or needs-review candidate against the ledger
+ * and decides this row is genuinely new money, the decision is persisted as a
+ * non-blocking flag (`NOT_A_DUPLICATE`) on the staging row and audited. The
+ * import-time duplicate gate respects it for this line only; no status
+ * changes, no financial data moves.
+ */
+export async function acknowledgeLineNotDuplicate(
+  userId: string,
+  statementId: string,
+  lineId: string,
+): Promise<ReviewResult> {
+  if (!UUID_RE.test(statementId) || !UUID_RE.test(lineId)) {
+    return { ok: false, error: "This statement line could not be resolved." };
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      const line = await loadReviewLine(tx, statementId, lineId);
+      if (!line) return { ok: false, error: LINE_NOT_FOUND } satisfies ReviewResult;
+
+      const blocked = transitionError(line, "decide");
+      if (blocked) return { ok: false, error: blocked } satisfies ReviewResult;
+
+      if (line.flags.includes("NOT_A_DUPLICATE")) {
+        return { ok: true } satisfies ReviewResult;
+      }
+
+      // The decision must answer an actual candidate: recompute the ledger
+      // matches for this line inside the same transaction, so a stale review
+      // screen can never acknowledge a match that no longer exists.
+      const candidates = await findLedgerCandidatesForLine(tx, {
+        lineId: line.id,
+        statementId: line.statementId,
+        txnDate: line.txnDate,
+        withdrawalAmount: line.withdrawalAmount,
+        depositAmount: line.depositAmount,
+        narration: line.narration,
+        businessDescription: line.businessDescription ?? null,
+        clientId: line.clientId,
+        categoryId: line.categoryId,
+      });
+      const needsDecision = candidates.some(
+        (candidate) => candidate.severity === "strong" || candidate.severity === "review",
+      );
+      if (!needsDecision) {
+        return {
+          ok: false,
+          error:
+            "No duplicate candidate needs a decision on this row. Refresh the review and try again.",
+        } satisfies ReviewResult;
+      }
+
+      const afterFlags: LineFlag[] = [...line.flags, "NOT_A_DUPLICATE"];
+      await tx
+        .update(bankStatementLines)
+        .set({
+          flags: afterFlags,
+          updatedAt: new Date(),
+        })
+        .where(eq(bankStatementLines.id, line.id));
+
+      await tx
+        .update(bankStatements)
+        .set({ updatedAt: new Date() })
+        .where(eq(bankStatements.id, statementId));
+
+      await tx.insert(auditEvents).values({
+        entityType: "bank_statement_line",
+        entityId: line.id,
+        action: "duplicate_acknowledged",
+        performedBy: userId,
+        source: "bank_import",
+        beforeState: auditLineState(line),
+        afterState: auditLineState({ ...line, flags: afterFlags }),
+      });
+
+      return { ok: true } satisfies ReviewResult;
+    });
+  } catch (error) {
+    logSafeDbError("acknowledgeLineNotDuplicate", error);
+    return { ok: false, error: "Recording the decision failed. Try again." };
   }
 }
 

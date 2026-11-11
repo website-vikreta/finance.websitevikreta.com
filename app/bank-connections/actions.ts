@@ -27,6 +27,7 @@ import {
 } from "@/lib/bank-import/import";
 import { reopenStatementWithDeadImports } from "@/lib/bank-import/statement-sync";
 import {
+  acknowledgeLineNotDuplicate,
   convertLinesPositive,
   markLineDuplicate,
   markLineReady,
@@ -134,6 +135,23 @@ export async function markLineDuplicateAction(
   if (!guard.ok) return guard.result;
 
   const result = await markLineDuplicate(guard.userId, statementId, lineId, note);
+  if (result.ok) refresh();
+  return result;
+}
+
+/**
+ * Persists the reviewer's "Not a duplicate" decision (audit entry + non-
+ * blocking staging flag). The import gate re-reads this server-side, so the
+ * row can import as new money once every other eligibility rule passes.
+ */
+export async function acknowledgeLineNotDuplicateAction(
+  statementId: string,
+  lineId: string,
+): Promise<ReviewResult> {
+  const guard = await guardReview();
+  if (!guard.ok) return guard.result;
+
+  const result = await acknowledgeLineNotDuplicate(guard.userId, statementId, lineId);
   if (result.ok) refresh();
   return result;
 }
