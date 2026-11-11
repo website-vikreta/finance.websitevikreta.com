@@ -31,31 +31,52 @@ async function StatementData({ params }: { params: Promise<{ id: string }> }) {
   let detail = await getStatementDetail(statementId);
   if (!detail) {
     return (
-      <div className="space-y-2">
-        <p className="text-body-sm text-muted-foreground">
-          This statement is no longer available.
-        </p>
-        <Link
-          href="/bank-connections?list=1"
-          className="inline-flex items-center gap-1.5 text-caption text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden />
-          Back to bank connections
-        </Link>
-      </div>
+      <>
+        <div className="space-y-2 print:hidden">
+          <Link
+            href="/bank-connections?list=1"
+            className="inline-flex items-center gap-1.5 text-caption text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" aria-hidden />
+            Bank connections
+          </Link>
+          <PageHeader
+            title="Statement review"
+            description="Classify staging rows and import approved lines as transactions"
+          />
+        </div>
+        <div className="space-y-2">
+          <p className="text-body-sm text-muted-foreground">
+            This statement is no longer available.
+          </p>
+          <Link
+            href="/bank-connections?list=1"
+            className="inline-flex items-center gap-1.5 text-caption text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" aria-hidden />
+            Back to bank connections
+          </Link>
+        </div>
+      </>
     );
   }
 
   // One-time completeness reconcile: a statement whose rows are all imported /
   // skipped / duplicate but still claims `review` (its last decision landed
   // before this sync existed) completes here instead of staying stuck forever.
-  // `finalizeStatementStatuses` guards the write with `WHERE status = 'review'`,
-  // so concurrent writers can't race it.
+  // Dead imports are deliberately excluded: an imported row whose transaction
+  // was deleted is not settled, so the statement must stay in review where the
+  // row can be restored or re-imported. `finalizeStatementStatuses` guards the
+  // write with `WHERE status = 'review'`, so concurrent writers can't race it.
+  const hasDeadImports = detail.lines.some(
+    (line) => line.status === "imported" && line.importLive === false,
+  );
   if (
     detail.statement.status === "review" &&
     detail.statement.pendingCount === 0 &&
     detail.statement.readyCount === 0 &&
-    detail.statement.errorCount === 0
+    detail.statement.errorCount === 0 &&
+    !hasDeadImports
   ) {
     await db.transaction((tx) =>
       finalizeStatementStatuses(tx, statementId, ["review"]),
