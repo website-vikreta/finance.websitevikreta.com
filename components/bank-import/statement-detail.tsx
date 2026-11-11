@@ -1,4 +1,5 @@
 import { formatINR, formatDate } from "@/lib/format";
+import { formatStatementPeriod } from "@/lib/bank-import/period";
 import {
   Card,
   CardContent,
@@ -94,9 +95,7 @@ export function StatementSummaryCard({ detail }: { detail: StatementDetail }) {
             <CardTitle className="truncate">{statement.fileName}</CardTitle>
             <p className="text-caption text-muted-foreground">
               {account.displayName} ·{" "}
-              {statement.statementFrom
-                ? `${formatDate(statement.statementFrom)} → ${statement.statementTo ? formatDate(statement.statementTo) : "Present"}`
-                : "Statement period unavailable"}
+              {formatStatementPeriod(statement.periodFrom, statement.periodTo)}
             </p>
           </div>
           <Badge

@@ -19,6 +19,7 @@ import {
   parseAmountCell,
 } from "./normalize";
 import type { StatementDetail } from "./queries";
+import { effectiveStatementPeriod } from "./period";
 
 export type ReconciliationStatus = "balanced" | "unbalanced" | "insufficient_data";
 
@@ -55,21 +56,15 @@ export interface StatementReconciliation {
   overlappingStatements: StatementOverlap[];
 }
 
-/** Fallen-back statement period: declared dates, else the row date span. */
+/**
+ * Statement period used by reconciliation: the dates the uploaded rows cover,
+ * falling back to the printed header period only when no row has a usable date.
+ */
 export function resolveStatementPeriod(detail: StatementDetail): {
   from: string | null;
   to: string | null;
 } {
-  if (detail.statement.statementFrom && detail.statement.statementTo) {
-    return { from: detail.statement.statementFrom, to: detail.statement.statementTo };
-  }
-
-  const dates = detail.lines
-    .map((line) => line.txnDate ?? line.valueDate)
-    .filter((date): date is string => Boolean(date))
-    .sort();
-  if (dates.length === 0) return { from: null, to: null };
-  return { from: dates[0], to: dates[dates.length - 1] };
+  return effectiveStatementPeriod(detail.statement, detail.lines);
 }
 
 interface OverlapRow {
@@ -91,21 +86,40 @@ export async function listOverlappingStatements(
 ): Promise<StatementOverlap[]> {
   if (!period.from || !period.to) return [];
 
+  // Compare the same effective ranges the screens show: the row coverage of
+  // each statement, falling back to its printed header period. This keeps old
+  // statements (including one-page extracts) from claiming false overlaps.
   const result = await db.execute(sql`
     SELECT
-      s.id,
-      s.file_name AS "fileName",
-      to_char(s.statement_from, 'YYYY-MM-DD') AS "statementFrom",
-      to_char(s.statement_to, 'YYYY-MM-DD') AS "statementTo"
-    FROM bank_statements s
-    WHERE s.id <> ${statementId}::uuid
-      AND s.account_id = ${accountId}::uuid
-      AND s.status NOT IN ('failed', 'cancelled')
-      AND s.statement_from IS NOT NULL
-      AND s.statement_to IS NOT NULL
-      AND ${period.from}::date <= s.statement_to
-      AND ${period.to}::date >= s.statement_from
-    ORDER BY s.statement_from, s.created_at
+      p.id,
+      p.file_name AS "fileName",
+      p.range_from AS "statementFrom",
+      p.range_to AS "statementTo"
+    FROM (
+      SELECT
+        s.id,
+        s.file_name,
+        s.created_at,
+        to_char(
+          coalesce(min(coalesce(l.txn_date, l.value_date)), s.statement_from),
+          'YYYY-MM-DD'
+        ) AS range_from,
+        to_char(
+          coalesce(max(coalesce(l.txn_date, l.value_date)), s.statement_to),
+          'YYYY-MM-DD'
+        ) AS range_to
+      FROM bank_statements s
+      LEFT JOIN bank_statement_lines l ON l.statement_id = s.id
+      WHERE s.id <> ${statementId}::uuid
+        AND s.account_id = ${accountId}::uuid
+        AND s.status NOT IN ('failed', 'cancelled')
+      GROUP BY s.id
+    ) p
+    WHERE p.range_from IS NOT NULL
+      AND p.range_to IS NOT NULL
+      AND ${period.from}::date <= p.range_to::date
+      AND ${period.to}::date >= p.range_from::date
+    ORDER BY p.range_from::date, p.created_at
     LIMIT 10
   `);
 

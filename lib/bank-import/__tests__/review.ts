@@ -22,6 +22,7 @@ import {
   resolveStatementPeriod,
 } from "../reconciliation";
 import type { StatementDetail, StatementLineRow } from "../queries";
+import { effectiveStatementPeriod } from "../period";
 import type { Classification, LineFlag, LineStatus } from "../types";
 
 let passed = 0;
@@ -105,6 +106,16 @@ function detailFixture(
     statementTo?: string | null;
   } = {},
 ): StatementDetail {
+  const statementFrom =
+    overrides.statementFrom === undefined ? "2026-04-01" : overrides.statementFrom;
+  const statementTo =
+    overrides.statementTo === undefined ? "2026-04-30" : overrides.statementTo;
+  const period = effectiveStatementPeriod({ statementFrom, statementTo }, lines);
+  const rowBounds = effectiveStatementPeriod(
+    { statementFrom: null, statementTo: null },
+    lines,
+  );
+
   return {
     statement: {
       id: UUID_B,
@@ -112,8 +123,12 @@ function detailFixture(
       accountName: "Test account",
       fileName: "statement.pdf",
       status: "review",
-      statementFrom: overrides.statementFrom === undefined ? "2026-04-01" : overrides.statementFrom,
-      statementTo: overrides.statementTo === undefined ? "2026-04-30" : overrides.statementTo,
+      statementFrom,
+      statementTo,
+      rowFrom: rowBounds.from,
+      rowTo: rowBounds.to,
+      periodFrom: period.from,
+      periodTo: period.to,
       pageCount: 1,
       lineCount: lines.length,
       pendingCount: 0,
@@ -695,11 +710,23 @@ function detailFixture(
   );
   assert.deepEqual(fallback, { from: "2026-04-05", to: "2026-04-20" });
 
+  // The reported case: a printed header wider than the rows in this upload.
+  const rowsWin = resolveStatementPeriod(
+    detailFixture(
+      [
+        lineRow({ id: UUID_B, rowNumber: 2, txnDate: "2026-04-07" }),
+        lineRow({ id: UUID_A, rowNumber: 1, txnDate: "2026-04-25" }),
+      ],
+      { statementFrom: "2026-04-01", statementTo: "2026-10-20" },
+    ),
+  );
+  assert.deepEqual(rowsWin, { from: "2026-04-07", to: "2026-04-25" });
+
   const neither = resolveStatementPeriod(
     detailFixture([lineRow({ txnDate: null, valueDate: null })], { statementFrom: null, statementTo: null }),
   );
   assert.deepEqual(neither, { from: null, to: null });
-  ok("period: declared period wins, else row dates, else nothing");
+  ok("period: row coverage wins, else printed header, else nothing");
 }
 
 // ── Bulk duplicate policy ────────────────────────────────────────────────────

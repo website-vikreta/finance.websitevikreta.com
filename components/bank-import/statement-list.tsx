@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/format";
+import { formatStatementPeriod } from "@/lib/bank-import/period";
 import { toast } from "sonner";
 import type { StatementSummary, StatementStatus } from "@/lib/bank-import/queries";
 import { deleteStatementAction } from "@/app/bank-connections/actions";
@@ -61,11 +62,7 @@ function DeleteStatementDialog({
           </p>
           <p>
             <strong>Period:</strong>{" "}
-            {statement.statementFrom
-              ? `${formatDate(statement.statementFrom)} → ${
-                  statement.statementTo ? formatDate(statement.statementTo) : "Ongoing"
-                }`
-              : "Statement period unavailable"}
+            {formatStatementPeriod(statement.periodFrom, statement.periodTo)}
           </p>
           <p>
             <strong>Lines:</strong> {statement.lineCount} total &nbsp;·&nbsp;
@@ -134,11 +131,7 @@ export function StatementList({ statements }: { statements: StatementSummary[] }
                 <span className="truncate">{statement.fileName}</span>
               </div>
               <p className="mt-0.5 truncate text-body-sm font-medium">
-                {statement.statementFrom
-                  ? `${formatDate(statement.statementFrom)} → ${
-                      statement.statementTo ? formatDate(statement.statementTo) : "Ongoing"
-                    }`
-                  : "Statement period unavailable"}
+                {formatStatementPeriod(statement.periodFrom, statement.periodTo)}
               </p>
               <p className="mt-1 text-caption text-muted-foreground">
                 {statement.accountName} · {statement.lineCount} rows · {statement.pageCount}{" "}

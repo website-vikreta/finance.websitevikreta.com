@@ -258,6 +258,12 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 - Why: The two supplied statements print the same reference with and without zero padding (and letters with/without prefix), so overlapping periods were invisible to fingerprint matching; on the real pair, 46/57 overlapping rows matched only through the fold.
 - Date: 2026-10-28
 
+### [Data] — Displayed statement period follows row coverage, not the PDF header
+- Rule: Every manager-facing statement range (upload-history card, delete dialog, statement summary, overlap warning, duplicate origin detail) renders `periodFrom`/`periodTo`: the min/max of `coalesce(txn_date, value_date)` across the statement's lines, falling back to the stored `statement_from`/`statement_to` header only when no row has a usable date. Compute it at read time so existing statements are fixed without re-upload or a DB backfill; keep the stored header as provenance. All surfaces use `lib/bank-import/period.ts` (`effectivePeriod`, `effectiveStatementPeriod`, `formatStatementPeriod`) so list SQL, detail rows, duplicate SQL and overlap SQL cannot drift.
+- Where: `lib/bank-import/queries.ts` (`STATEMENT_BASE_COLUMNS`, `mapSummary`), `lib/bank-import/reconciliation.ts` (`resolveStatementPeriod`, `listOverlappingStatements`), `lib/bank-import/duplicates.ts`, `components/bank-import/statement-list.tsx`, `components/bank-import/statement-detail.tsx`, `components/bank-import/reconciliation-card.tsx`
+- Why: A one-page extract can carry the six-month header period while containing only two months of rows; both uploads then appeared to cover 1 Apr → 20 Oct even though one was 7 Apr → 25 May. Row coverage is the honest range of the uploaded statement and also stops false overlap warnings.
+- Date: 2026-11-06
+
 ### [Data] - CSV date cells are text-forced ISO, never spreadsheet dates
 - Rule: Every date cell in every CSV export (ledger, clients, reports) is written through `dateCell` (`lib/transactions/csv.ts`): strict `YYYY-MM-DD` (trimmed slice, non-dates and nulls pass through / fallback) prefixed with a single leading space, then quoted like any other cell. Never feed raw ISO (`c.firstSeen`) or `formatDate` output into a CSV date column.
 - Where: `lib/transactions/csv.ts` (`toCsv`, `dateCell`), `lib/clients/csv.ts`, `lib/reports/csv.ts`
