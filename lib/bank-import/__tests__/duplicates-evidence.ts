@@ -117,8 +117,7 @@ function candidate(overrides: CandidateOverrides = {}): TransactionCandidateEvid
   assert.equal(previous.label, "Duplicate · Previous Statement · 2026-04-11");
   assert.equal(previous.severity, "strong");
   assert.ok(previous.detail.includes("april-statement.pdf"));
-  assert.ok(previous.detail.includes("2026-04-01"));
-  assert.ok(previous.detail.includes("2026-04-30"));
+  assert.ok(previous.detail.includes("1 Apr 2026 → 30 Apr 2026"));
   // Safe-detail guarantee: narration/reference text never leaks into labels or details.
   assert.ok(!previous.detail.includes("INDBH29043154405"));
   assert.ok(!previous.label.includes("ESCROW"));

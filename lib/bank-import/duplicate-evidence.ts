@@ -17,6 +17,8 @@
  *   evidence, which the review surface already exposes.
  */
 
+import { formatPeriodRange } from "./period";
+
 // ─── Friendly source labels ──────────────────────────────────────────────────
 
 export const DUPLICATE_SOURCE_LABELS = {
@@ -444,10 +446,11 @@ function originStatementNote(
   transaction: TransactionCandidateInput["transaction"],
 ): string | null {
   if (!transaction.originFileName) return null;
-  const period =
-    transaction.originStatementFrom && transaction.originStatementTo
-      ? ` (statement ${transaction.originStatementFrom} → ${transaction.originStatementTo})`
-      : "";
+  const range = formatPeriodRange(
+    transaction.originStatementFrom ?? null,
+    transaction.originStatementTo ?? null,
+  );
+  const period = range ? ` (statement ${range})` : "";
   return `Imported earlier from ${transaction.originFileName}${period}.`;
 }
 

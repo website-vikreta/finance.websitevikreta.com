@@ -49,6 +49,7 @@ import {
   transactionBadgeLabel,
   type TransactionCandidateEvidence,
 } from "./duplicate-evidence";
+import { formatPeriodRange } from "./period";
 
 export type DuplicateKind =
   | "same_statement_row"
@@ -213,8 +214,8 @@ function stagingDetail(
       ? "Another row in this statement has the same reference, date, amount and direction."
       : "Another row in this statement has the same content.";
   }
-  const period =
-    originFrom && originTo ? ` (statement ${originFrom} → ${originTo})` : "";
+  const range = formatPeriodRange(originFrom, originTo);
+  const period = range ? ` (statement ${range})` : "";
   if (kind === "other_statement_row") {
     return `${how} Already staged in ${fileName ?? "an earlier statement"}${period}.
 Import was never completed there; resolve which upload is kept in review.`;
@@ -254,8 +255,18 @@ export async function findDuplicateCandidates(
         withdrawalAmount: bankStatementLines.withdrawalAmount,
         depositAmount: bankStatementLines.depositAmount,
         fingerprint: bankStatementLines.fingerprint,
-        statementFrom: bankStatements.statementFrom,
-        statementTo: bankStatements.statementTo,
+        statementFrom: sql<string | null>`coalesce(
+          (SELECT to_char(min(coalesce(m.txn_date, m.value_date)), 'YYYY-MM-DD')
+           FROM bank_statement_lines m
+           WHERE m.statement_id = ${bankStatements.id}),
+          to_char(${bankStatements.statementFrom}, 'YYYY-MM-DD')
+        )`,
+        statementTo: sql<string | null>`coalesce(
+          (SELECT to_char(max(coalesce(m.txn_date, m.value_date)), 'YYYY-MM-DD')
+           FROM bank_statement_lines m
+           WHERE m.statement_id = ${bankStatements.id}),
+          to_char(${bankStatements.statementTo}, 'YYYY-MM-DD')
+        )`,
       })
       .from(bankStatementLines)
       .innerJoin(bankStatements, eq(bankStatements.id, bankStatementLines.statementId))
@@ -296,8 +307,18 @@ export async function findDuplicateCandidates(
         withdrawalAmount: bankStatementLines.withdrawalAmount,
         depositAmount: bankStatementLines.depositAmount,
         reference: bankStatementLines.reference,
-        statementFrom: bankStatements.statementFrom,
-        statementTo: bankStatements.statementTo,
+        statementFrom: sql<string | null>`coalesce(
+          (SELECT to_char(min(coalesce(m.txn_date, m.value_date)), 'YYYY-MM-DD')
+           FROM bank_statement_lines m
+           WHERE m.statement_id = ${bankStatements.id}),
+          to_char(${bankStatements.statementFrom}, 'YYYY-MM-DD')
+        )`,
+        statementTo: sql<string | null>`coalesce(
+          (SELECT to_char(max(coalesce(m.txn_date, m.value_date)), 'YYYY-MM-DD')
+           FROM bank_statement_lines m
+           WHERE m.statement_id = ${bankStatements.id}),
+          to_char(${bankStatements.statementTo}, 'YYYY-MM-DD')
+        )`,
       })
       .from(bankStatementLines)
       .innerJoin(bankStatements, eq(bankStatements.id, bankStatementLines.statementId))
@@ -356,8 +377,18 @@ export async function findDuplicateCandidates(
       l.client_id AS "lineClientId",
       l.category_id AS "lineCategoryId",
       o.file_name AS "originFileName",
-      to_char(o.statement_from, 'YYYY-MM-DD') AS "originStatementFrom",
-      to_char(o.statement_to, 'YYYY-MM-DD') AS "originStatementTo",
+      coalesce(
+        (SELECT to_char(min(coalesce(origin.txn_date, origin.value_date)), 'YYYY-MM-DD')
+         FROM bank_statement_lines origin
+         WHERE origin.statement_id = o.id),
+        to_char(o.statement_from, 'YYYY-MM-DD')
+      ) AS "originStatementFrom",
+      coalesce(
+        (SELECT to_char(max(coalesce(origin.txn_date, origin.value_date)), 'YYYY-MM-DD')
+         FROM bank_statement_lines origin
+         WHERE origin.statement_id = o.id),
+        to_char(o.statement_to, 'YYYY-MM-DD')
+      ) AS "originStatementTo",
       l.withdrawal_amount::text AS "withdrawal",
       l.deposit_amount::text AS "deposit"
     FROM bank_statement_lines l
@@ -574,8 +605,18 @@ export async function findLedgerCandidatesForLine(
       t.client_name_snapshot AS "clientNameSnapshot",
       c.client_name AS "clientName",
       o.file_name AS "originFileName",
-      to_char(o.statement_from, 'YYYY-MM-DD') AS "originStatementFrom",
-      to_char(o.statement_to, 'YYYY-MM-DD') AS "originStatementTo"
+      coalesce(
+        (SELECT to_char(min(coalesce(origin.txn_date, origin.value_date)), 'YYYY-MM-DD')
+         FROM bank_statement_lines origin
+         WHERE origin.statement_id = o.id),
+        to_char(o.statement_from, 'YYYY-MM-DD')
+      ) AS "originStatementFrom",
+      coalesce(
+        (SELECT to_char(max(coalesce(origin.txn_date, origin.value_date)), 'YYYY-MM-DD')
+         FROM bank_statement_lines origin
+         WHERE origin.statement_id = o.id),
+        to_char(o.statement_to, 'YYYY-MM-DD')
+      ) AS "originStatementTo"
     FROM transactions t
     LEFT JOIN clients c ON c.client_id = t.client_id
     LEFT JOIN bank_statement_lines ol ON ol.transaction_id = t.id
