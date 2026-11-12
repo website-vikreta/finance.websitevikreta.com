@@ -129,6 +129,21 @@ function isFlagged(line: StatementLineRow): boolean {
   return effectiveFlags(line).some((flag) => BLOCKING_LINE_FLAGS.has(flag));
 }
 
+/**
+ * Rows that belong in the "Duplicate candidates" view: either detection
+ * surfaced a candidate, or the reviewer explicitly marked the row as a
+ * duplicate. The explicit decision matters even when no candidate fired — a
+ * normal ready row can be duplicated intentionally, and once marked it must
+ * stay visible where duplicate decisions live.
+ */
+function isDuplicateReviewRow(
+  line: StatementLineRow,
+  duplicatesByLine: Record<string, LineDuplicateCandidate[]>,
+): boolean {
+  if (line.status === "duplicate") return true;
+  return (duplicatesByLine[line.id] ?? []).length > 0;
+}
+
 /** A row is importable while staged, or again after its transaction was deleted. */
 function isImportSelectable(line: StatementLineRow, importable: boolean): boolean {
   if (!importable) return false;
@@ -225,7 +240,7 @@ export function ReviewTable({
     for (const line of lines) {
       result[line.status] = (result[line.status] ?? 0) + 1;
       if (isFlagged(line)) result.flagged += 1;
-      if ((duplicatesByLine[line.id] ?? []).length > 0) result.duplicates += 1;
+      if (isDuplicateReviewRow(line, duplicatesByLine)) result.duplicates += 1;
     }
     return result;
   }, [lines, duplicatesByLine]);
@@ -234,7 +249,7 @@ export function ReviewTable({
     if (filter === "all") return lines;
     if (filter === "flagged") return lines.filter(isFlagged);
     if (filter === "duplicates") {
-      return lines.filter((line) => (duplicatesByLine[line.id] ?? []).length > 0);
+      return lines.filter((line) => isDuplicateReviewRow(line, duplicatesByLine));
     }
     return lines.filter((line) => line.status === filter);
   }, [lines, filter, duplicatesByLine]);
