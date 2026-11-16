@@ -21,7 +21,6 @@ export const metadata: Metadata = {
   title: { default: "Finance | Website Vikreta", template: "%s | Finance | Website Vikreta" },
   description: "Internal income and expense tracker for Website Vikreta managers.",
   applicationName: "Website Vikreta Finance",
-  robots: { index: false, follow: false },
   openGraph: { title: "Website Vikreta Finance", description: "Internal income and expense tracker for Website Vikreta managers.", siteName: "Website Vikreta", type: "website" },
 };
 
