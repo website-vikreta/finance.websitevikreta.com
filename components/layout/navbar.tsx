@@ -1,20 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { LogOut, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+
+// The sign-out dialog (and its dialog library) is only fetched when the user asks for it.
+const SignOutDialog = dynamic(
+  () => import("./sign-out-dialog").then((m) => m.SignOutDialog),
+  { ssr: false },
+);
 
 interface NavbarProps {
   onToggleSidebar?: () => void;
@@ -23,27 +21,33 @@ interface NavbarProps {
 export function Navbar({ onToggleSidebar }: NavbarProps) {
   const [role, setRole] = useState<string | null>(null);
   const [showSignOut, setShowSignOut] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [signOutMounted, setSignOutMounted] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.role) setRole(data.role);
-      })
-      .catch(() => {});
-  }, []);
-
-  const handleSignOut = useCallback(async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      await fetch("/api/auth/logout");
-      window.location.href = "/login";
-    } catch {
-      window.location.href = "/login";
+    const controller = new AbortController();
+    const loadRole = () => {
+      fetch("/api/auth/me", { signal: controller.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.role) setRole(data.role);
+        })
+        .catch(() => {});
+    };
+    // The role badge is not needed for first paint: wait for idle so this DB-backed
+    // request stays off the hydration path.
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(loadRole, { timeout: 2000 });
+      return () => {
+        window.cancelIdleCallback(id);
+        controller.abort();
+      };
     }
-  }, [loggingOut]);
+    const id = window.setTimeout(loadRole, 1200);
+    return () => {
+      window.clearTimeout(id);
+      controller.abort();
+    };
+  }, []);
 
   return (
     <>
@@ -53,7 +57,7 @@ export function Navbar({ onToggleSidebar }: NavbarProps) {
             <Menu className="size-5" aria-hidden />
           </Button>
           <Link href="/dashboard" className="min-w-0 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-            <Image src="/brand/websitevikreta-logo-horizontal.svg" alt="Website Vikreta" width={1364} height={300} priority className="h-auto w-40 sm:w-48" />
+            <Image src="/brand/websitevikreta-logo-horizontal.svg" alt="Website Vikreta" width={1364} height={300} loading="eager" fetchPriority="high" className="h-auto w-40 sm:w-48" />
           </Link>
         </div>
 
@@ -64,55 +68,27 @@ export function Navbar({ onToggleSidebar }: NavbarProps) {
             </Badge>
           ) : null}
 
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setShowSignOut(true)}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Sign out"
-                >
-                  <LogOut className="size-4" aria-hidden />
-                </Button>
-              }
-            />
-            <TooltipContent>Sign out</TooltipContent>
-          </Tooltip>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => {
+              setSignOutMounted(true);
+              setShowSignOut(true);
+            }}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut className="size-4" aria-hidden />
+          </Button>
         </div>
       </header>
 
-      {/* Sign-out confirmation dialog */}
-      <Dialog open={showSignOut} onOpenChange={setShowSignOut}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-title-md">Sign out?</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to sign out of your account?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowSignOut(false)}
-              disabled={loggingOut}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="default"
-              onClick={handleSignOut}
-              disabled={loggingOut}
-            >
-              {loggingOut ? "Signing out…" : "Yes, sign out"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Sign-out confirmation dialog — fetched and mounted on first use */}
+      {signOutMounted && (
+        <SignOutDialog open={showSignOut} onOpenChange={setShowSignOut} />
+      )}
     </>
   );
 }

@@ -1,12 +1,19 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { Navbar } from "./navbar";
 import { Sidebar } from "./sidebar";
-import { FinanceAIDrawer } from "@/components/chat/finance-ai-drawer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BotFace } from "@/components/chat/bot-face";
 import { cn } from "@/lib/utils";
+
+// The chat drawer is code-split and only fetched after the user opens it; it is
+// never part of the first load of every page.
+const FinanceAIDrawer = dynamic(
+  () => import("@/components/chat/finance-ai-drawer").then((m) => m.FinanceAIDrawer),
+  { ssr: false },
+);
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -21,6 +28,8 @@ export function AppShell({ children }: AppShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [financeAIOpen, setFinanceAIOpen] = useState(false);
+  // Mount the drawer after the first open (and keep it mounted) so closing still animates.
+  const [chatMounted, setChatMounted] = useState(false);
   const [chatWidth, setChatWidth] = useState(CHAT_DEFAULT_WIDTH);
 
   // Drag state — kept in refs for performance (no re-renders during drag)
@@ -35,6 +44,7 @@ export function AppShell({ children }: AppShellProps) {
       setSidebarCollapsed(true);
     }
     setFinanceAIOpen(true);
+    setChatMounted(true);
   };
 
   const [isResizing, setIsResizing] = useState(false);
@@ -229,12 +239,14 @@ export function AppShell({ children }: AppShellProps) {
           </div>
         )}
 
-        {/* Right-docked Finance AI Drawer */}
-        <FinanceAIDrawer
-          isOpen={financeAIOpen}
-          onClose={() => setFinanceAIOpen(false)}
-          panelWidth={chatWidth}
-        />
+        {/* Right-docked Finance AI Drawer — mounted on first open, not on page load */}
+        {chatMounted && (
+          <FinanceAIDrawer
+            isOpen={financeAIOpen}
+            onClose={() => setFinanceAIOpen(false)}
+            panelWidth={chatWidth}
+          />
+        )}
       </div>
     </div>
   );
