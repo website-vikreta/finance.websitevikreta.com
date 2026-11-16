@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { formatINR, formatShare } from "@/lib/format";
 import type { Breakdown } from "@/lib/transactions/queries";
+import { DonutChart } from "./donut-chart";
 
 const SLOTS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 const OTHER = "var(--chart-other)";
@@ -53,15 +53,7 @@ export function BreakdownDonut({ title, items, empty }: BreakdownDonutProps) {
         <>
           {asDonut ? (
             <div className="relative mx-auto mt-4 size-44" role="img" aria-label={`${title}: ${formatINR(total)} total`}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={data} dataKey="amount" nameKey="name" innerRadius="64%" outerRadius="100%" stroke="var(--card)" strokeWidth={2} startAngle={90} endAngle={-270} isAnimationActive={false} onMouseEnter={(_, i) => setHovered(i)} onMouseLeave={() => setHovered(null)}>
-                    {data.map((s, i) => (
-                      <Cell key={s.name} fill={s.color} opacity={hovered === null || hovered === i ? 1 : 0.35} className="transition-opacity" />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+              <DonutChart data={data} hovered={hovered} onHover={setHovered} />
               <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
                 <div className="max-w-24">
                   <p className="font-mono text-title-sm tabular-nums text-foreground">{formatINR(focus ? focus.amount : total, { compact: true })}</p>
