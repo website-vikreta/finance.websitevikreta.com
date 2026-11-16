@@ -34,7 +34,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse, isMobileOpen = fa
           {navItems.map(({ label, href, icon: Icon }) => {
             const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
             return (
-              <Link key={href} href={href} onClick={onCloseMobile} title={collapsed ? label : undefined} className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-caption transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50", active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground", collapsed && "lg:justify-center lg:px-0")}>
+              <Link key={href} href={href} prefetch={false} onClick={onCloseMobile} title={collapsed ? label : undefined} className={cn("flex h-10 items-center gap-3 rounded-lg px-3 text-caption transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50", active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground", collapsed && "lg:justify-center lg:px-0")}>
                 <Icon className={cn("size-4 shrink-0", active && "text-primary")} aria-hidden />
                 {collapsed ? null : <span className="truncate">{label}</span>}
               </Link>

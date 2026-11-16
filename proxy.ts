@@ -109,6 +109,6 @@ export const config = {
   // dev client keeps retrying, and after repeated failures it force-reloads the
   // page — which made every screen refresh endlessly during development.
   matcher: [
-    "/((?!_next/static|_next/image|_next/hmr|_next/webpack-hmr|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico)$).*)",
+    "/((?!_next/static|_next/image|_next/hmr|_next/webpack-hmr|favicon\\.ico|robots\\.txt|sitemap\\.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|ico)$).*)",
   ],
 };
