@@ -1,13 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { dueText, leftText, money, toBill } from "@/components/transactions/recurring-list";
-import { TransactionFormDialog, type BillToLog } from "@/components/transactions/transaction-form-dialog";
+import { dueText, leftText, money, toBill } from "@/components/transactions/recurring-display";
+import type { BillToLog } from "@/components/transactions/transaction-form-dialog";
 import { daysUntil } from "@/lib/transactions/recurring-dates";
 import type { RecurringRow } from "@/lib/transactions/recurring";
 import { cn } from "@/lib/utils";
+
+// The full transaction form is a large dialog; load it on the first "Mark paid" click.
+const TransactionFormDialog = dynamic(
+  () => import("@/components/transactions/transaction-form-dialog").then((m) => m.TransactionFormDialog),
+  { ssr: false },
+);
 
 const WINDOW_DAYS = 35;
 const MAX_ROWS = 5;
@@ -15,6 +22,7 @@ const MAX_ROWS = 5;
 /** Active bills due within WINDOW_DAYS (overdue first); "Mark paid" opens a prefilled confirm form. */
 export function UpcomingBills({ rows, today }: { rows: RecurringRow[]; today: string }) {
   const [logging, setLogging] = useState<BillToLog | null>(null);
+  const [formMounted, setFormMounted] = useState(false);
   const due = rows.filter((r) => r.isActive && daysUntil(r.nextDue, today) <= WINDOW_DAYS);
 
   return (
@@ -40,7 +48,7 @@ export function UpcomingBills({ rows, today }: { rows: RecurringRow[]; today: st
                   <p className={cn("text-caption", d.overdue ? "text-destructive" : "text-muted-foreground")}>{[leftText(r), d.text].filter(Boolean).join(" · ")}</p>
                 </div>
                 <p className="shrink-0 font-mono text-body-sm font-semibold tabular-nums">{money(r)}</p>
-                <Button size="sm" variant="outline" onClick={() => setLogging(toBill(r))}>
+                <Button size="sm" variant="outline" onClick={() => { setFormMounted(true); setLogging(toBill(r)); }}>
                   Mark paid
                 </Button>
               </li>
@@ -48,7 +56,9 @@ export function UpcomingBills({ rows, today }: { rows: RecurringRow[]; today: st
           })}
         </ul>
       )}
-      <TransactionFormDialog open={logging !== null} onOpenChange={(o) => !o && setLogging(null)} bill={logging} />
+      {formMounted && (
+        <TransactionFormDialog open={logging !== null} onOpenChange={(o) => !o && setLogging(null)} bill={logging} />
+      )}
     </section>
   );
 }
