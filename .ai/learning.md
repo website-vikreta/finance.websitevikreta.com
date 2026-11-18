@@ -422,3 +422,9 @@ Topics in use: `[Tokens]` `[Type]` `[Layout]` `[Component]` `[Money]` `[Data]` `
 - Where: `lib/bank-import/queries.ts` (payload-hash seam), `components/bank-import/review-table.tsx`, `components/bank-import/statement-detail.tsx`, `components/bank-import/reopen-statement.tsx`
 - Why: The statement page must keep telling the ledger's story after the import: an edited transaction is no longer exactly what the PDF said, and the manager should see it without opening /transactions.
 - Date: 2026-11-03
+
+### [Data] — Full backup is one text-lossless .xlsx; import is additive only
+- Rule: Export backup writes one `.xlsx` with `_meta`, `_readme`, and one sheet per table (`app_users`, clients, categories, transaction_types, recurring_expenses, invoices, invoice_items, transactions, bank_accounts, bank_statements, bank_statement_lines, company_profile, audit_events, chat_sessions). Every cell is text (`numFmt "@"`); `_meta.dataHash` is SHA-256 over canonical normalized rows. Import backup is admin-only, runs in one `repeatable read` transaction under an advisory lock, inserts only missing rows with original IDs, matches existing rows by ID then natural key, re-links child FKs to the live parent, and never updates existing financial rows. Only empty `app_users` fields for the env admin and empty `company_profile` fields may be completed. `?dryRun=1` does the same work and always rolls back. No env secrets or `DATABASE_URL` in the workbook.
+- Where: `lib/backup/{types,format,tables,xlsx,export,import}.ts`, `app/api/settings/backup/{export,import}/route.ts`, `app/settings/backup-actions.tsx`
+- Why: A full restore must survive a new database, while a partial restore must be safe to run against live money data. Additive-only + natural-key re-linking + one transaction is the contract; the hash warns when a workbook was re-saved but every row is still validated.
+- Date: 2026-11-18
