@@ -5,7 +5,7 @@ import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { RecurringRow } from "@/lib/transactions/recurring";
 import { EditBillDialog } from "./edit-bill-dialog";
-import { toBill } from "./recurring-list";
+import { toBill } from "./recurring-display";
 import { TransactionFormDialog, type BillToLog } from "./transaction-form-dialog";
 
 /** Mark paid (active bills) and Edit on the bill page; the same dialogs as the bills list. */

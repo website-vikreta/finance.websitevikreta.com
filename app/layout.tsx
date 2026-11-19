@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ChatSessionProvider } from "@/components/chat/chat-session-provider";
 
@@ -21,7 +20,6 @@ export const metadata: Metadata = {
   title: { default: "Finance | Website Vikreta", template: "%s | Finance | Website Vikreta" },
   description: "Internal income and expense tracker for Website Vikreta managers.",
   applicationName: "Website Vikreta Finance",
-  robots: { index: false, follow: false },
   openGraph: { title: "Website Vikreta Finance", description: "Internal income and expense tracker for Website Vikreta managers.", siteName: "Website Vikreta", type: "website" },
 };
 
@@ -39,9 +37,7 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <TooltipProvider>
-          <ChatSessionProvider>{children}</ChatSessionProvider>
-        </TooltipProvider>
+        <ChatSessionProvider>{children}</ChatSessionProvider>
         <Toaster theme="light" />
       </body>
     </html>

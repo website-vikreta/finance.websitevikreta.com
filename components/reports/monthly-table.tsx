@@ -45,6 +45,7 @@ export function MonthlyTable({
         <h2 className="text-title-md">Monthly summary</h2>
         <select
           id="reports-year-select"
+          aria-label="Financial year"
           value={selectedYear}
           onChange={(e) => handleYearChange(Number(e.target.value))}
           className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-caption font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
