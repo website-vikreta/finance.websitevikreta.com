@@ -68,24 +68,26 @@ export async function buildBackupWorkbook(input: BuildWorkbookInput): Promise<Ui
   for (const sheet of input.sheets) {
     const worksheet = workbook.addWorksheet(sheet.sheet, { properties: { defaultColWidth: 20 } });
     worksheet.addRow(sheet.headers);
-    for (const row of sheet.rows) {
-      const added = worksheet.addRow(row);
-      added.eachCell({ includeEmpty: false }, (cell) => {
-        // Text format keeps ISO dates, IDs, leading zeros and decimals exactly
-        // as stored. Excel may still convert a cell when a person edits it;
-        // import validates every value and never silently rounds.
-        cell.numFmt = "@";
-      });
-    }
+    for (const row of sheet.rows) worksheet.addRow(row);
     styleHeader(worksheet, sheet.headers.length);
     worksheet.views = [{ state: "frozen", ySplit: 1 }];
     for (let index = 1; index <= sheet.headers.length; index += 1) {
       const header = sheet.headers[index - 1] ?? "";
-      worksheet.getColumn(index).width = Math.min(48, Math.max(14, header.length + 4));
+      const column = worksheet.getColumn(index);
+      // Text format keeps ISO dates, IDs, leading zeros and decimals exactly as
+      // stored, without styling thousands of individual cells on every export.
+      column.numFmt = "@";
+      column.width = Math.min(48, Math.max(14, header.length + 4));
     }
   }
 
-  const buffer = await workbook.xlsx.writeBuffer();
+  // A backup is a small, private file, not a web asset. Storing the zip entries
+  // instead of deflating them removes most of ExcelJS's CPU cost while the file
+  // stays comfortably below the 25 MB upload cap.
+  const buffer = await workbook.xlsx.writeBuffer({
+    useSharedStrings: false,
+    zip: { compression: "STORE" },
+  });
   return new Uint8Array(buffer as ArrayBuffer);
 }
 
