@@ -270,39 +270,49 @@ export async function deleteTransaction(
   }
 }
 
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Restore one soft-deleted transaction inside a caller-owned transaction.
+ * Shared by the ledger's "Recently deleted" action and Import backup so both
+ * paths redo the recurring payment, re-link the client and re-complete the
+ * owning bank statement identically.
+ */
+export async function restoreTransactionRow(tx: DbTx, userId: string, id: string): Promise<ManageResult> {
+  const [row] = await tx.select().from(transactions).where(eq(transactions.id, id)).for("update");
+  if (!row || row.deletedAt === null) return { ok: false, error: "This transaction isn't deleted." } as ManageResult;
+  const blocked = await redoPayment(tx, userId, row);
+  if (blocked) return { ok: false, error: blocked } as ManageResult;
+
+  // The client may have been removed meanwhile; re-link income to an active client by name.
+  const clientId = row.typeId === 1 && row.clientNameSnapshot ? await resolveClientId(tx, row.clientNameSnapshot) : row.clientId;
+
+  const [restored] = await tx
+    .update(transactions)
+    .set({ deletedAt: null, deletedBy: null, clientId, updatedAt: new Date() })
+    .where(eq(transactions.id, id))
+    .returning();
+
+  await tx.insert(auditEvents).values({
+    entityType: "transaction",
+    entityId: id,
+    action: "restored",
+    performedBy: userId,
+    source: "manual",
+    beforeState: { deleted_at: row.deletedAt },
+    afterState: { deleted_at: null, client_id: restored.clientId },
+  });
+
+  // An imported row back in the ledger re-livens its statement's import;
+  // the statement completes again once nothing else stays unresolved.
+  await syncStatementForRestoredTransaction(tx, userId, id);
+
+  return { ok: true, id } as ManageResult;
+}
+
 export async function restoreTransaction(userId: string, id: string): Promise<ManageResult> {
   try {
-    return await db.transaction(async (tx) => {
-      const [row] = await tx.select().from(transactions).where(eq(transactions.id, id)).for("update");
-      if (!row || row.deletedAt === null) return { ok: false, error: "This transaction isn't deleted." } as ManageResult;
-      const blocked = await redoPayment(tx, userId, row);
-      if (blocked) return { ok: false, error: blocked } as ManageResult;
-
-      // The client may have been removed meanwhile; re-link income to an active client by name.
-      const clientId = row.typeId === 1 && row.clientNameSnapshot ? await resolveClientId(tx, row.clientNameSnapshot) : row.clientId;
-
-      const [restored] = await tx
-        .update(transactions)
-        .set({ deletedAt: null, deletedBy: null, clientId, updatedAt: new Date() })
-        .where(eq(transactions.id, id))
-        .returning();
-
-      await tx.insert(auditEvents).values({
-        entityType: "transaction",
-        entityId: id,
-        action: "restored",
-        performedBy: userId,
-        source: "manual",
-        beforeState: { deleted_at: row.deletedAt },
-        afterState: { deleted_at: null, client_id: restored.clientId },
-      });
-
-      // An imported row back in the ledger re-livens its statement's import;
-      // the statement completes again once nothing else stays unresolved.
-      await syncStatementForRestoredTransaction(tx, userId, id);
-
-      return { ok: true, id } as ManageResult;
-    });
+    return await db.transaction((tx) => restoreTransactionRow(tx, userId, id));
   } catch (err) {
     console.error("[restoreTransaction] failed:", err);
     return { ok: false, error: "Couldn't restore it. Please try again." };
