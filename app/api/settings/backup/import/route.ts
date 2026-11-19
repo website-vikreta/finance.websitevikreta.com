@@ -7,6 +7,7 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/server-auth";
 import { isAdmin } from "@/lib/credentials";
 import { importBackup } from "@/lib/backup/import";
@@ -69,12 +70,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const dryRun = req.nextUrl.searchParams.get("dryRun") === "1";
     const report = await importBackup({
       bytes,
       fileName: file.name,
       userId: auth.session.userId,
-      dryRun: req.nextUrl.searchParams.get("dryRun") === "1",
+      dryRun,
     });
+    // A real import can add or restore rows used by every page. Purge the
+    // server and client router caches once, here, so /transactions,
+    // /bank-connections, dashboard, clients and reports all read the new
+    // database state on the next navigation instead of a stale RSC payload.
+    if (report.ok && !dryRun) revalidatePath("/", "layout");
     return NextResponse.json(report, {
       status: report.ok ? 200 : report.rolledBack ? 422 : 400,
       headers: NO_STORE,

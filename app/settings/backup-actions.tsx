@@ -80,6 +80,9 @@ export function BackupActions() {
         return;
       }
       setReport(body);
+      // The route already invalidated server caches. Refresh this screen now so
+      // the settings page and the rest of the tab agree before the dialog closes.
+      if (body.ok && !dryRun) router.refresh();
     } catch {
       setError("The upload did not reach the server. Check your connection and try again.");
     } finally {
