@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx lib/db/migrate.ts",
     "db:bootstrap": "tsx lib/db/bootstrap.ts",
-    "test": "npm run test:cn && npm run test:intent && npm run test:ask && npm run test:recurring && npm run test:invoices && npm run test:clients && npm run test:regression && npm run test:clarify && npm run test:credentials && npm run test:precision && npm run test:fiscal-year && npm run test:analytics && npm run test:yearly && npm run test:this-year && npm run test:manage-input && npm run test:phases && npm run test:api && npm run test:integration && npm run test:persistence && npm run test:bank-import && npm run test:recurring-db",
+    "test": "npm run test:cn && npm run test:intent && npm run test:ask && npm run test:recurring && npm run test:invoices && npm run test:clients && npm run test:regression && npm run test:clarify && npm run test:credentials && npm run test:precision && npm run test:fiscal-year && npm run test:analytics && npm run test:yearly && npm run test:this-year && npm run test:manage-input && npm run test:phases && npm run test:api && npm run test:integration && npm run test:persistence && npm run test:bank-import && npm run test:backup && npm run test:recurring-db",
     "test:regression": "tsx lib/chatbot/__tests__/regression.ts",
     "test:clarify": "tsx lib/chatbot/__tests__/clarify.ts",
     "test:credentials": "tsx lib/__tests__/credentials.ts",
@@ -32,6 +32,7 @@
     "test:persistence": "tsx lib/transactions/__tests__/persistence.test.ts",
     "test:recurring-db": "tsx lib/transactions/__tests__/recurring-db.test.ts",
     "test:bank-import": "tsx lib/bank-import/__tests__/safe-log.ts && tsx lib/bank-import/__tests__/parser.ts && tsx lib/bank-import/__tests__/period.ts && tsx lib/bank-import/__tests__/duplicates.ts && tsx lib/bank-import/__tests__/duplicates-evidence.ts && tsx lib/bank-import/__tests__/reconciliation.ts && tsx lib/bank-import/__tests__/pdf.ts && tsx lib/bank-import/__tests__/regression.ts && tsx lib/bank-import/__tests__/business-description.ts && tsx lib/bank-import/__tests__/export.ts && tsx lib/bank-import/__tests__/review.ts && tsx lib/bank-import/__tests__/upload.ts && tsx lib/bank-import/__tests__/import.ts && tsx lib/bank-import/__tests__/statement-sync.ts && tsx lib/bank-import/__tests__/review-db.ts && tsx lib/bank-import/__tests__/upload-db.ts && tsx lib/bank-import/__tests__/import-db.ts && tsx lib/bank-import/__tests__/financial-integration-db.ts",
+    "test:backup": "tsx lib/backup/__tests__/backup.ts",
     "test:schema": "tsx lib/db/__tests__/schema-verify.ts"
   },
   "dependencies": {
@@ -41,9 +42,10 @@
     "cn": "^0.4.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.4",
+    "exceljs": "^4.4.0",
     "jose": "^6.2.12",
     "lucide-react": "^1.52.0",
-    "next": "16.4.2",
+    "next": "16.4.6",
     "next-themes": "^0.4.6",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "5.4.296",

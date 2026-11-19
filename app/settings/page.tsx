@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
-import { Download, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { AddMemberForm } from "./add-member-form";
 import { CompanyProfileForm } from "./company-profile-form";
 import { getCompanyProfile } from "@/lib/invoices/company";
 import { RemoveMemberButton } from "./remove-member-button";
+import { BackupActions } from "./backup-actions";
 
 export const metadata = { title: "Settings" };
 
@@ -111,6 +112,33 @@ async function Company() {
   );
 }
 
+/** Admins get the full backup controls; everyone else keeps Sign out only. */
+async function Data() {
+  const auth = await requireAuthAction();
+  const admin = auth.ok ? await isAdmin(auth.session.userId) : false;
+
+  return (
+    <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 @xl:flex-row @xl:items-center @xl:justify-between">
+      <div className="min-w-0">
+        <h2 className="text-title-md">Data</h2>
+        {admin ? (
+          <p className="mt-1 max-w-xl text-body-sm text-muted-foreground">
+            Download every record as one Excel file, or restore a backup. Import only adds missing records; it never
+            overwrites current data.
+          </p>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {admin ? <BackupActions /> : null}
+        <a href="/api/auth/logout" className={cn(buttonVariants({ variant: "outline" }), "border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive")}>
+          <LogOut aria-hidden />
+          Sign out
+        </a>
+      </div>
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   return (
     <AppShell>
@@ -137,19 +165,9 @@ export default function SettingsPage() {
         <Members />
       </Suspense>
 
-      <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6 @xl:flex-row @xl:items-center @xl:justify-between">
-        <h2 className="text-title-md">Data</h2>
-        <div className="flex flex-wrap gap-3">
-          <a href="/api/reports/export?period=all" className={buttonVariants({ variant: "outline" })}>
-            <Download aria-hidden />
-            Export all (CSV)
-          </a>
-          <a href="/api/auth/logout" className={cn(buttonVariants({ variant: "outline" }), "border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive")}>
-            <LogOut aria-hidden />
-            Sign out
-          </a>
-        </div>
-      </section>
+      <Suspense fallback={<Skeleton className="h-40 rounded-xl" />}>
+        <Data />
+      </Suspense>
     </AppShell>
   );
 }

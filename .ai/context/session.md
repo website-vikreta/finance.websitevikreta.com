@@ -4,6 +4,14 @@
 
 ## Current Task
 
+2026-11-18: Full-database Export backup / Import backup (`feat/backup-export-import`, committed; not pushed).
+- Settings → Data now has admin-only "Export backup" (one .xlsx: `_meta`, `_readme`, 14 table sheets) and "Import backup". Managers see only Sign out; the backup controls are hidden. The Settings "Export all (CSV)" link is gone; report CSV routes are unchanged.
+- Export: one read-only `repeatable read` snapshot; every cell is text (`numFmt "@"`); `_meta.dataHash` is SHA-256 over canonical rows, with row counts/tables metadata.
+- Import: admin-only route, `.xlsx` only, 25 MB/row caps, one `repeatable read` transaction + advisory lock. Adds only missing rows with original IDs; matches existing by ID then natural key (client name, category name, user email, invoice number/FY+seq, recurring signature, transaction idempotency key, statement SHA, bank account name, line position/transaction); re-links child FKs to live parents; never updates existing financial rows. Only empty company-profile fields and empty admin email/role/hash may be completed. `?dryRun=1` does the work and always rolls back. Report shows totals, per-table added/existing, relation re-links, notes, warnings and errors; real imports write one audit event.
+- Verified: `test:backup` 15/15; typecheck; scoped ESLint; `next build` (passes on retry after the Next security nudge); dev + `next start` export/dry-run 200; live dry-run 0 inserted/784 existing rolled back; throwaway-schema fresh import 784/784, second import 0/784; remap test 777 inserted/7 existing with all FK checks zero; live extra-row dry-run inserted 1/784 and rolled back (transactions and audit counts unchanged); modified missing-row warning, bad-row 400 report; admin/manager Settings gating.
+- Caveats: no disposable PostgreSQL; destructive insert/remap tests used throwaway schema clones of the live DB. `next build` stops once on the Next 16 security advisory (expected); retry passes.
+- 2026-11-18 follow-up (working tree only): import now restores soft-deleted rows when the backup has them live, and restores bank-linked transactions whose staging row still says `imported` even when the backup marks them deleted — clearing “Import deleted” without manual re-import. Restores reuse `restoreTransactionRow` (bulk simple bank rows), report `restored` counts, and after a real import `revalidatePath("/", "layout")` + `router.refresh()` refresh every page. Batched audit/transaction/line inserts + preloaded IDs cut live dry-run from ~25–37 s to ~1.6 s; temp-schema real re-import ~2.9 s, fresh import ~11.4 s. Verified: `test:backup` 16/16, typecheck, scoped ESLint, `next build`, dev smoke (`/settings`, `/transactions`, `/bank-connections` 200; export 200 658 KB; live dry-run 200 with 8 restored/791 existing, rolled back). No add/commit/push.
+
 2026-11-11: Completed-statement Export CSV + Export PDF (`feat/bank-import-smart-duplicate-detection`, committed in 64a45d3).
 - Scope: only statements with status `completed` get export actions, rendered in the page header (`app/bank-connections/[id]/page.tsx`) inside its `print:hidden` wrapper. CSV and PDF both read the same `StatementDetail`, so screen, CSV and PDF agree.
 - PDF: new print-only `components/bank-import/print-statement.tsx` (`print-document print-bank-statement hidden print:block`) with a Summary section and a full nine-column table (Date, Narration, Business Description, Withdrawal, Deposit, Balance, Classification, Flags, Status). Uses the shared `ExportPdfButton` browser-print flow and the existing `PrintSection`/`PrintTable` theme (yellow badge, yellow-ruled headings, black-header tables). A4 landscape via named `@page bank-statement` + `.print-bank-statement { page: bank-statement }` in `app/globals.css`, because nine full columns cannot fit portrait without truncating narration/description. `deriveBalancesFromRows` keeps opening/closing figures identical to the on-screen summary.
@@ -149,9 +157,8 @@
 
 ## Current Repo State
 
-- Branch: `fix/bank-import-pdf-upload` (all work above done here or on its predecessor `fix/bank-import-pdf-runtime`; per instruction nothing is committed — working tree only).
-- The working tree contains unrelated uncommitted work from prior tasks. Preserve it; do not reset, clean, stash, or overwrite it.
-- The bank import implementation and migration are present as untracked work from the prior agent. No commit, push, deploy, or remote DB operation was performed for this task.
+- Branch: `feat/backup-export-import` (cut from `fix/seo-optimization`). The backup feature + learning/session notes are committed here; nothing pushed, merged, or deployed.
+- Working tree: preserve any unrelated uncommitted work from prior tasks; do not reset, clean, stash, or overwrite it.
 - Bank import DB suites must use a disposable local database before execution; older chatbot integration/persistence suites may write to the configured database.
 
 ## Open Questions

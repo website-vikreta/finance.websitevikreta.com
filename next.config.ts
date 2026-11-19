@@ -75,7 +75,7 @@ const nextConfig = (phase: string): NextConfig => ({
   // runtime — never bundled, so hosts without the native canvas still
   // resolve them the way a plain Node require does. See
   // lib/bank-import/pdf.ts "PDF libraries load lazily".
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "exceljs"],
   /*
    * Node's trace follows imports only, and pdfjs-dist loads its parsing core
    * by dynamic-importing `pdf.worker.mjs` RESOLVED FROM ITS OWN FILE at
