@@ -12,9 +12,10 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
+import { syncStatementForRestoredTransaction } from "@/lib/bank-import/statement-sync";
 import {
   canonicalDataHash,
   normalizeCell,
@@ -223,6 +224,7 @@ export async function importBackup(options: {
         await importBankAccounts(ctx, prepared.sheets.get("bank_accounts") ?? []);
         await importBankStatements(ctx, prepared.sheets.get("bank_statements") ?? []);
         await importBankStatementLines(ctx, prepared.sheets.get("bank_statement_lines") ?? []);
+        await restoreDeadBankImports(ctx);
         await importCompanyProfile(ctx, prepared.sheets.get("company_profile") ?? []);
         await importAuditEvents(ctx, prepared.sheets.get("audit_events") ?? []);
         await importChatSessions(ctx, prepared.sheets.get("chat_sessions") ?? []);
@@ -1536,6 +1538,118 @@ async function importBankStatements(ctx: ImportContext, rows: NormalizedRow[]): 
       ctx.maps.statementsBySha.set(fileSha256, id);
     }
     statRow.inserted += 1;
+  }
+}
+
+/**
+ * Bank statement lines keep `status = imported` when the ledger row is deleted;
+ * the statement page then shows "Import deleted". A backup import is meant to
+ * make that data usable again, so restore every still-deleted transaction that
+ * an imported staging row still owns. The shared transaction restore path also
+ * redoes any recurring payment and re-completes the owning statement.
+ */
+async function restoreDeadBankImports(ctx: ImportContext): Promise<void> {
+  const result = await ctx.tx.execute(sql`
+    select distinct
+      t.id as "id",
+      t.deleted_at as "deletedAt",
+      t.type_id as "typeId",
+      t.recurring_id as "recurringId",
+      t.recurring_due as "recurringDue",
+      t.client_id as "clientId",
+      t.client_name_snapshot as "clientNameSnapshot",
+      l.statement_id as "statementId"
+    from bank_statement_lines l
+    join transactions t on t.id = l.transaction_id
+    where l.status = 'imported' and t.deleted_at is not null
+  `);
+  interface DeadImport {
+    id: string;
+    deletedAt: Date;
+    typeId: number;
+    recurringId: string | null;
+    recurringDue: string | null;
+    clientId: string | null;
+    clientNameSnapshot: string | null;
+    statementId: string;
+  }
+  const rows = (result.rows as unknown as DeadImport[]).filter((row) => Boolean(row.id));
+  if (!rows.length) return;
+
+  const byTransaction = new Map<string, DeadImport>();
+  const statements = new Map<string, string>();
+  for (const row of rows) {
+    if (!byTransaction.has(row.id)) byTransaction.set(row.id, row);
+    if (!statements.has(row.statementId)) statements.set(row.statementId, row.id);
+  }
+
+  const simple: DeadImport[] = [];
+  const full: DeadImport[] = [];
+  for (const row of byTransaction.values()) {
+    const nameKey = row.clientNameSnapshot ? normalizeNameKey(row.clientNameSnapshot) : "";
+    const activeClient = nameKey ? ctx.maps.clientsByNameActive.get(nameKey) : undefined;
+    const needsClientRelink = row.typeId === 1 && Boolean(row.clientNameSnapshot) && activeClient !== row.clientId;
+    if (row.recurringId || row.recurringDue || needsClientRelink) full.push(row);
+    else simple.push(row);
+  }
+
+  let restored = 0;
+  const failures: string[] = [];
+  const statRow = stat(ctx, "transactions");
+  const markRestored = (id: string) => {
+    const row = ctx.maps.transactionRows.get(id);
+    if (row) ctx.maps.transactionRows.set(id, { ...row, deletedAt: null, deletedBy: null });
+    // A deleted transaction that was already present was counted as "existing"
+    // earlier in the import. It is now restored, so move the count across.
+    if (ctx.maps.countedExistingTransactions.delete(id)) statRow.existing = Math.max(0, statRow.existing - 1);
+    statRow.restored += 1;
+    restored += 1;
+  };
+
+  if (simple.length > 0) {
+    await ctx.tx
+      .update(schema.transactions)
+      .set({ deletedAt: null, deletedBy: null, updatedAt: new Date() })
+      .where(inArray(schema.transactions.id, simple.map((row) => row.id)));
+    await ctx.tx.insert(schema.auditEvents).values(
+      simple.map((row) => ({
+        entityType: "transaction",
+        entityId: row.id,
+        action: "restored",
+        performedBy: ctx.userId,
+        source: "manual",
+        beforeState: { deleted_at: row.deletedAt instanceof Date ? row.deletedAt.toISOString() : String(row.deletedAt) },
+        afterState: { deleted_at: null, client_id: row.clientId },
+        metadata: { tool: "settings.import_backup", via: "bank_import_restore" },
+      })),
+    );
+    for (const row of simple) markRestored(row.id);
+  }
+
+  for (const row of full) {
+    const outcome = await restoreTransactionRow(ctx.tx, ctx.userId, row.id);
+    if (!outcome.ok) {
+      failures.push(outcome.error ?? "unknown error");
+      continue;
+    }
+    markRestored(row.id);
+  }
+
+  // One statement sync after every row is live: it sees the final line states
+  // and can complete a statement that previously showed "Import deleted".
+  for (const transactionId of statements.values()) {
+    await syncStatementForRestoredTransaction(ctx.tx, ctx.userId, transactionId);
+  }
+
+  if (restored > 0) {
+    ctx.notes.add(
+      `Restored ${restored} bank-imported transaction${restored === 1 ? "" : "s"} that the ledger still marked deleted.`,
+    );
+  }
+  if (failures.length > 0) {
+    ctx.warnings.add(
+      `${failures.length} bank-imported transaction${failures.length === 1 ? " was" : "s were"} left deleted: ${failures[0]}`,
+    );
   }
 }
 
