@@ -18,6 +18,7 @@ import {
   validateHeaders,
   type NormalizedSheet,
 } from "../format";
+import { backupImportMessage } from "../report";
 import { BACKUP_FORMAT } from "../types";
 import { buildBackupWorkbook, readBackupWorkbook } from "../xlsx";
 
@@ -145,6 +146,25 @@ async function main(): Promise<void> {
   ]);
   assert.equal(roundTripHash, dataHash);
   ok("the workbook hash matches after a read/write round trip");
+
+  console.log("Backup import — report wording");
+  assert.equal(
+    backupImportMessage({ dryRun: true, inserted: 2, restored: 1, existing: 3 }),
+    "Validation passed. 2 records would be added, 1 record deleted here would be restored, 3 records already exist. Nothing was written.",
+  );
+  assert.equal(
+    backupImportMessage({ dryRun: false, inserted: 2, restored: 1, existing: 3 }),
+    "Added 2 records. restored 1 record deleted here. 3 records already were live and left untouched.",
+  );
+  assert.equal(
+    backupImportMessage({ dryRun: false, inserted: 0, restored: 0, existing: 7 }),
+    "7 records already were live and left untouched.",
+  );
+  assert.equal(
+    backupImportMessage({ dryRun: true, inserted: 0, restored: 0, existing: 0 }),
+    "Validation passed. The backup has no records. Nothing was written.",
+  );
+  ok("the dialog reports added, restored and existing rows distinctly");
 
   console.log(`\n${passed} backup checks passed.`);
 }
