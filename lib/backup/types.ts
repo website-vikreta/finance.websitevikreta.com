@@ -24,7 +24,9 @@ export interface BackupTableReport {
   label: string;
   /** Rows added to the database. */
   inserted: number;
-  /** Rows already present in the database and deliberately left untouched. */
+  /** Soft-deleted rows brought back because the backup has them live. */
+  restored: number;
+  /** Rows already present and live in the database, deliberately left untouched. */
   existing: number;
 }
 
@@ -46,6 +48,7 @@ export interface BackupImportReport {
   message: string;
   totals: {
     inserted: number;
+    restored: number;
     existing: number;
     tables: number;
   };

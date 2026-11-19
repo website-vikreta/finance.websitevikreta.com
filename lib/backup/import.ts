@@ -26,6 +26,7 @@ import {
   BACKUP_TABLES,
   columnsFor,
 } from "./tables";
+import { backupImportMessage } from "./report";
 import {
   BACKUP_FORMAT,
   BACKUP_FORMAT_VERSION,
@@ -35,12 +36,24 @@ import {
   type BackupTableReport,
 } from "./types";
 import { BackupFileError, readBackupWorkbook, type RawBackupWorkbook } from "./xlsx";
+import { restoreTransactionRow } from "@/lib/transactions/manage";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 type ExistingUser = typeof schema.appUsers.$inferSelect;
 type ExistingCategory = typeof schema.categories.$inferSelect;
 type ExistingType = typeof schema.transactionTypes.$inferSelect;
+type ExistingClient = typeof schema.clients.$inferSelect;
+type ExistingRecurring = typeof schema.recurringExpenses.$inferSelect;
+type ExistingInvoice = typeof schema.invoices.$inferSelect;
+type ExistingTransaction = typeof schema.transactions.$inferSelect;
+type ExistingBankAccount = typeof schema.bankAccounts.$inferSelect;
+
+interface TableStat {
+  inserted: number;
+  restored: number;
+  existing: number;
+}
 
 interface NormalizedRow {
   sheet: string;
@@ -51,7 +64,7 @@ interface NormalizedRow {
 interface ImportContext {
   tx: Tx;
   userId: string;
-  stats: Map<string, { inserted: number; existing: number }>;
+  stats: Map<string, TableStat>;
   linked: Map<string, number>;
   notes: Set<string>;
   warnings: Set<string>;
@@ -69,19 +82,25 @@ interface ExistingMaps {
   typesByCode: Map<string, string>;
   typeRows: Map<number, ExistingType>;
   clients: Map<string, string>;
+  clientRows: Map<string, ExistingClient>;
   clientsByNameActive: Map<string, string>;
   clientsByNameDeleted: Map<string, string>;
   recurring: Map<string, string>;
+  recurringRows: Map<string, ExistingRecurring>;
   recurringBySignatureActive: Map<string, string>;
   recurringBySignatureDeleted: Map<string, string>;
   invoices: Map<string, string>;
+  invoiceRows: Map<string, ExistingInvoice>;
   invoicesByNumber: Map<string, string>;
   invoicesByFySeq: Map<string, string>;
   invoiceItems: Map<string, string>;
   invoiceItemsByPosition: Map<string, string>;
   transactions: Map<string, string>;
+  transactionRows: Map<string, ExistingTransaction>;
   transactionsByIdempotency: Map<string, string>;
+  countedExistingTransactions: Set<string>;
   bankAccounts: Map<string, string>;
+  bankAccountRows: Map<string, ExistingBankAccount>;
   bankAccountsByNameActive: Map<string, string>;
   bankAccountsByNameDeleted: Map<string, string>;
   statements: Map<string, string>;
@@ -89,6 +108,8 @@ interface ExistingMaps {
   lines: Map<string, string>;
   linesByPosition: Map<string, string>;
   linesByTransaction: Map<string, string>;
+  auditIds: Set<string>;
+  chatUserIds: Set<string>;
 }
 
 interface PreparedBackup {
@@ -178,8 +199,8 @@ export async function importBackup(options: {
     };
   }
 
-  const stats = new Map<string, { inserted: number; existing: number }>();
-  for (const spec of BACKUP_TABLES) stats.set(spec.sheet, { inserted: 0, existing: 0 });
+  const stats = new Map<string, TableStat>();
+  for (const spec of BACKUP_TABLES) stats.set(spec.sheet, { inserted: 0, restored: 0, existing: 0 });
   const linked = new Map<string, number>();
   const notes = new Set<string>();
   const warnings = new Set(prepared.warnings);
@@ -229,8 +250,9 @@ export async function importBackup(options: {
             formatVersion: prepared.formatVersion,
             integrity: prepared.integrity,
             inserted: result.totals.inserted,
+            restored: result.totals.restored,
             existing: result.totals.existing,
-            tables: result.tables.filter((table) => table.inserted > 0),
+            tables: result.tables.filter((table) => table.inserted > 0 || table.restored > 0),
           },
           metadata: { tool: "settings.import_backup" },
         });
@@ -385,7 +407,7 @@ function prepareBackup(raw: RawBackupWorkbook): PreparedBackup {
 async function loadContext(
   tx: Tx,
   userId: string,
-  stats: Map<string, { inserted: number; existing: number }>,
+  stats: Map<string, TableStat>,
   linked: Map<string, number>,
   notes: Set<string>,
   warnings: Set<string>,
@@ -401,19 +423,25 @@ async function loadContext(
     typesByCode: new Map(),
     typeRows: new Map(),
     clients: new Map(),
+    clientRows: new Map(),
     clientsByNameActive: new Map(),
     clientsByNameDeleted: new Map(),
     recurring: new Map(),
+    recurringRows: new Map(),
     recurringBySignatureActive: new Map(),
     recurringBySignatureDeleted: new Map(),
     invoices: new Map(),
+    invoiceRows: new Map(),
     invoicesByNumber: new Map(),
     invoicesByFySeq: new Map(),
     invoiceItems: new Map(),
     invoiceItemsByPosition: new Map(),
     transactions: new Map(),
+    transactionRows: new Map(),
     transactionsByIdempotency: new Map(),
+    countedExistingTransactions: new Set(),
     bankAccounts: new Map(),
+    bankAccountRows: new Map(),
     bankAccountsByNameActive: new Map(),
     bankAccountsByNameDeleted: new Map(),
     statements: new Map(),
@@ -421,6 +449,8 @@ async function loadContext(
     lines: new Map(),
     linesByPosition: new Map(),
     linesByTransaction: new Map(),
+    auditIds: new Set(),
+    chatUserIds: new Set(),
   };
 
   for (const user of await tx.select().from(schema.appUsers)) {
@@ -440,6 +470,7 @@ async function loadContext(
   }
   for (const client of await tx.select().from(schema.clients)) {
     maps.clients.set(client.clientId, client.clientId);
+    maps.clientRows.set(client.clientId, client);
     const key = normalizeNameKey(client.clientName);
     if (client.deletedAt) {
       if (!maps.clientsByNameDeleted.has(key)) maps.clientsByNameDeleted.set(key, client.clientId);
@@ -449,6 +480,7 @@ async function loadContext(
   }
   for (const bill of await tx.select().from(schema.recurringExpenses)) {
     maps.recurring.set(bill.id, bill.id);
+    maps.recurringRows.set(bill.id, bill);
     const key = recurringSignature(bill.description, String(bill.categoryId), bill.originalAmount, bill.originalCurrency, String(bill.anchorDay), bill.clientId);
     if (bill.deletedAt) {
       if (!maps.recurringBySignatureDeleted.has(key)) maps.recurringBySignatureDeleted.set(key, bill.id);
@@ -458,6 +490,7 @@ async function loadContext(
   }
   for (const invoice of await tx.select().from(schema.invoices)) {
     maps.invoices.set(invoice.id, invoice.id);
+    maps.invoiceRows.set(invoice.id, invoice);
     if (invoice.number) maps.invoicesByNumber.set(invoice.number, invoice.id);
     if (invoice.fy && invoice.seq !== null) maps.invoicesByFySeq.set(`${invoice.fy}:${invoice.seq}`, invoice.id);
   }
@@ -467,10 +500,12 @@ async function loadContext(
   }
   for (const txn of await tx.select().from(schema.transactions)) {
     maps.transactions.set(txn.id, txn.id);
+    maps.transactionRows.set(txn.id, txn);
     maps.transactionsByIdempotency.set(txn.idempotencyKey, txn.id);
   }
   for (const account of await tx.select().from(schema.bankAccounts)) {
     maps.bankAccounts.set(account.id, account.id);
+    maps.bankAccountRows.set(account.id, account);
     const key = normalizeNameKey(account.displayName);
     if (account.deletedAt) {
       if (!maps.bankAccountsByNameDeleted.has(key)) maps.bankAccountsByNameDeleted.set(key, account.id);
@@ -491,6 +526,15 @@ async function loadContext(
     maps.linesByPosition.set(`${line.statementId}:${line.pageNumber}:${line.rowNumber}`, line.id);
     if (line.transactionId) maps.linesByTransaction.set(line.transactionId, line.id);
   }
+  // Audit and chat rows have no natural key. Loading their keys here avoids
+  // one failed INSERT round trip per already-present row (the previous audit
+  // sheet alone cost ~30 seconds on a real 799-row backup).
+  for (const event of await tx.select({ id: schema.auditEvents.id }).from(schema.auditEvents)) {
+    maps.auditIds.add(event.id);
+  }
+  for (const chat of await tx.select({ userId: schema.chatSessions.userId }).from(schema.chatSessions)) {
+    maps.chatUserIds.add(chat.userId);
+  }
 
   return { tx, userId, stats, linked, notes, warnings, maps };
 }
@@ -506,16 +550,18 @@ function buildReport(input: {
 }): BackupImportReport {
   const tables = tableReports(input.ctx.stats);
   const inserted = tables.reduce((sum, table) => sum + table.inserted, 0);
+  const restored = tables.reduce((sum, table) => sum + table.restored, 0);
   const existing = tables.reduce((sum, table) => sum + table.existing, 0);
   const relations = [...input.ctx.linked.entries()]
     .map(([label, count]) => ({ label, count }))
     .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
 
-  const message = input.dryRun
-    ? `Validation passed. ${inserted} missing record${inserted === 1 ? "" : "s"} would be added and ${existing} already ${existing === 1 ? "exists" : "exist"}. Nothing was written.`
-    : inserted === 0
-      ? "Everything in this backup is already in the database. Nothing was added."
-      : `Added ${inserted} missing record${inserted === 1 ? "" : "s"}. ${existing} already existed and ${existing === 1 ? "was" : "were"} left untouched.`;
+  const message = backupImportMessage({
+    dryRun: input.dryRun,
+    inserted,
+    restored,
+    existing,
+  });
 
   return {
     ok: true,
@@ -528,7 +574,7 @@ function buildReport(input: {
     integrity: input.integrity,
     formatVersion: input.formatVersion,
     message,
-    totals: { inserted, existing, tables: tables.length },
+    totals: { inserted, restored, existing, tables: tables.length },
     tables,
     relations,
     notes: [...input.ctx.notes],
@@ -562,8 +608,8 @@ function buildFailure(
     integrity: input.integrity,
     formatVersion: input.formatVersion,
     message: "Nothing was imported. The transaction was rolled back.",
-    totals: { inserted: 0, existing, tables: tables.length },
-    tables: tables.map((table) => ({ ...table, inserted: 0 })),
+    totals: { inserted: 0, restored: 0, existing, tables: tables.length },
+    tables: tables.map((table) => ({ ...table, inserted: 0, restored: 0 })),
     relations: [...ctx.linked.entries()].map(([label, count]) => ({ label, count })),
     notes: [...ctx.notes],
     warnings: [...ctx.warnings],
@@ -593,7 +639,7 @@ function failureReport(input: {
     integrity: input.integrity,
     formatVersion: input.formatVersion,
     message: input.message,
-    totals: { inserted: 0, existing: 0, tables: 0 },
+    totals: { inserted: 0, restored: 0, existing: 0, tables: 0 },
     tables: [],
     relations: [],
     notes: [],
@@ -602,10 +648,10 @@ function failureReport(input: {
   };
 }
 
-function tableReports(stats: Map<string, { inserted: number; existing: number }>): BackupTableReport[] {
+function tableReports(stats: Map<string, TableStat>): BackupTableReport[] {
   return BACKUP_TABLES.map((spec) => {
-    const stat = stats.get(spec.sheet) ?? { inserted: 0, existing: 0 };
-    return { sheet: spec.sheet, label: spec.label, inserted: stat.inserted, existing: stat.existing };
+    const stat = stats.get(spec.sheet) ?? { inserted: 0, restored: 0, existing: 0 };
+    return { sheet: spec.sheet, label: spec.label, inserted: stat.inserted, restored: stat.restored, existing: stat.existing };
   });
 }
 
@@ -753,6 +799,25 @@ function stat(ctx: ImportContext, sheet: string) {
   const value = ctx.stats.get(sheet);
   if (!value) throw new Error(`Unknown backup sheet ${sheet}`);
   return value;
+}
+
+/** One audit row for a soft-deleted record that a backup brought back. */
+async function auditRestore(
+  ctx: ImportContext,
+  entityType: string,
+  entityId: string,
+  deletedAt: Date,
+): Promise<void> {
+  await ctx.tx.insert(schema.auditEvents).values({
+    entityType,
+    entityId,
+    action: "restored",
+    performedBy: ctx.userId,
+    source: "manual",
+    beforeState: { deleted_at: deletedAt.toISOString() },
+    afterState: { deleted_at: null },
+    metadata: { tool: "settings.import_backup" },
+  });
 }
 
 function recurringSignature(
@@ -921,12 +986,39 @@ async function importClients(ctx: ImportContext, rows: NormalizedRow[]): Promise
     const nameKey = normalizeNameKey(name);
 
     const byId = ctx.maps.clients.get(id);
-    const byName = deleted ? ctx.maps.clientsByNameDeleted.get(nameKey) : ctx.maps.clientsByNameActive.get(nameKey);
-    const existingId = byId ?? byName;
-    if (existingId) {
-      ctx.maps.clients.set(id, existingId);
-      statRow.existing += 1;
-      continue;
+    const byIdRow = byId ? ctx.maps.clientRows.get(byId) : undefined;
+    const byNameActive = ctx.maps.clientsByNameActive.get(nameKey);
+    const byNameDeleted = ctx.maps.clientsByNameDeleted.get(nameKey);
+
+    if (!deleted) {
+      // Prefer a live record. A live namesake wins over restoring a deleted id,
+      // so the active-name unique index can never be violated.
+      const liveId = byIdRow && !byIdRow.deletedAt ? byId : byNameActive;
+      if (liveId) {
+        ctx.maps.clients.set(id, liveId);
+        statRow.existing += 1;
+        continue;
+      }
+      if (byId && byIdRow?.deletedAt) {
+        await ctx.tx
+          .update(schema.clients)
+          .set({ deletedAt: null, deletedBy: null, updatedAt: new Date() })
+          .where(eq(schema.clients.clientId, byId));
+        await auditRestore(ctx, "client", byId, byIdRow.deletedAt);
+        ctx.maps.clients.set(id, byId);
+        ctx.maps.clientRows.set(byId, { ...byIdRow, deletedAt: null, deletedBy: null, updatedAt: new Date() });
+        ctx.maps.clientsByNameDeleted.delete(nameKey);
+        ctx.maps.clientsByNameActive.set(nameKey, byId);
+        statRow.restored += 1;
+        continue;
+      }
+    } else {
+      const existingId = byId ?? byNameDeleted;
+      if (existingId) {
+        ctx.maps.clients.set(id, existingId);
+        statRow.existing += 1;
+        continue;
+      }
     }
 
     const createdAt = timestamp(row, "createdAt", new Date()) as Date;
@@ -973,12 +1065,38 @@ async function importRecurring(ctx: ImportContext, rows: NormalizedRow[]): Promi
     const deletedAt = timestamp(row, "deletedAt");
 
     const signature = recurringSignature(description, categoryId, originalAmount, originalCurrency, String(anchorDay), clientId);
-    const map = deletedAt ? ctx.maps.recurringBySignatureDeleted : ctx.maps.recurringBySignatureActive;
-    const existingId = ctx.maps.recurring.get(id) ?? map.get(signature);
-    if (existingId) {
-      ctx.maps.recurring.set(id, existingId);
-      statRow.existing += 1;
-      continue;
+    const byId = ctx.maps.recurring.get(id);
+    const byIdRow = byId ? ctx.maps.recurringRows.get(byId) : undefined;
+    const activeSignature = ctx.maps.recurringBySignatureActive.get(signature);
+    const deletedSignature = ctx.maps.recurringBySignatureDeleted.get(signature);
+
+    if (!deletedAt) {
+      const liveId = byIdRow && !byIdRow.deletedAt ? byId : activeSignature;
+      if (liveId) {
+        ctx.maps.recurring.set(id, liveId);
+        statRow.existing += 1;
+        continue;
+      }
+      if (byId && byIdRow?.deletedAt) {
+        await ctx.tx
+          .update(schema.recurringExpenses)
+          .set({ deletedAt: null, updatedAt: new Date() })
+          .where(eq(schema.recurringExpenses.id, byId));
+        await auditRestore(ctx, "recurring_expense", byId, byIdRow.deletedAt);
+        ctx.maps.recurring.set(id, byId);
+        ctx.maps.recurringRows.set(byId, { ...byIdRow, deletedAt: null, updatedAt: new Date() });
+        ctx.maps.recurringBySignatureDeleted.delete(signature);
+        ctx.maps.recurringBySignatureActive.set(signature, byId);
+        statRow.restored += 1;
+        continue;
+      }
+    } else {
+      const existingId = byId ?? deletedSignature;
+      if (existingId) {
+        ctx.maps.recurring.set(id, existingId);
+        statRow.existing += 1;
+        continue;
+      }
     }
 
     const createdAt = timestamp(row, "createdAt", new Date()) as Date;
@@ -1042,9 +1160,36 @@ async function importInvoices(ctx: ImportContext, rows: NormalizedRow[]): Promis
     if (fy !== null && fy.length > 7) fail(row, "fy", "is too long.");
 
     const fyKey = fy && seq !== null ? `${fy}:${seq}` : null;
-    const existingId = ctx.maps.invoices.get(id) ?? (number ? ctx.maps.invoicesByNumber.get(number) : undefined) ?? (fyKey ? ctx.maps.invoicesByFySeq.get(fyKey) : undefined);
-    if (existingId) {
-      ctx.maps.invoices.set(id, existingId);
+    const candidates = [
+      ctx.maps.invoices.get(id),
+      number ? ctx.maps.invoicesByNumber.get(number) : undefined,
+      fyKey ? ctx.maps.invoicesByFySeq.get(fyKey) : undefined,
+    ].filter((value): value is string => Boolean(value));
+
+    if (!deletedAt) {
+      const liveId = candidates.find((candidate) => !ctx.maps.invoiceRows.get(candidate)?.deletedAt);
+      if (liveId) {
+        ctx.maps.invoices.set(id, liveId);
+        statRow.existing += 1;
+        continue;
+      }
+      const restoreId = candidates[0];
+      const restoreRow = restoreId ? ctx.maps.invoiceRows.get(restoreId) : undefined;
+      if (restoreId && restoreRow?.deletedAt) {
+        await ctx.tx
+          .update(schema.invoices)
+          .set({ deletedAt: null, updatedAt: new Date() })
+          .where(eq(schema.invoices.id, restoreId));
+        await auditRestore(ctx, "invoice", restoreId, restoreRow.deletedAt);
+        ctx.maps.invoices.set(id, restoreId);
+        ctx.maps.invoiceRows.set(restoreId, { ...restoreRow, deletedAt: null, updatedAt: new Date() });
+        if (number) ctx.maps.invoicesByNumber.set(number, restoreId);
+        if (fyKey) ctx.maps.invoicesByFySeq.set(fyKey, restoreId);
+        statRow.restored += 1;
+        continue;
+      }
+    } else if (candidates.length > 0) {
+      ctx.maps.invoices.set(id, candidates[0]);
       statRow.existing += 1;
       continue;
     }
@@ -1132,6 +1277,14 @@ async function importInvoiceItems(ctx: ImportContext, rows: NormalizedRow[]): Pr
 
 async function importTransactions(ctx: ImportContext, rows: NormalizedRow[]): Promise<void> {
   const statRow = stat(ctx, "transactions");
+  const pending: Array<typeof schema.transactions.$inferInsert> = [];
+  const flush = async () => {
+    if (!pending.length) return;
+    await ctx.tx.insert(schema.transactions).values(pending);
+    statRow.inserted += pending.length;
+    pending.length = 0;
+  };
+
   for (const row of rows) {
     const id = uuid(row, "id") as string;
     const typeIdRaw = ref(ctx, row, ctx.maps.types, trimmed(row, "typeId"), "transaction type", "typeId", true) as string;
@@ -1176,21 +1329,35 @@ async function importTransactions(ctx: ImportContext, rows: NormalizedRow[]): Pr
     if (idempotencyKey.length > 255) fail(row, "idempotencyKey", "is too long.");
     const payloadHash = requiredTrimmed(row, "payloadHash");
     if (payloadHash.length > 64) fail(row, "payloadHash", "is too long.");
+    const deletedAt = timestamp(row, "deletedAt");
 
     const existingId = ctx.maps.transactions.get(id) ?? ctx.maps.transactionsByIdempotency.get(idempotencyKey);
     if (existingId) {
       ctx.maps.transactions.set(id, existingId);
-      statRow.existing += 1;
+      const existingRow = ctx.maps.transactionRows.get(existingId);
+      if (!deletedAt && existingRow?.deletedAt) {
+        const restored = await restoreTransactionRow(ctx.tx, ctx.userId, existingId);
+        if (!restored.ok) fail(row, "id", restored.error);
+        ctx.maps.transactionRows.set(existingId, { ...existingRow, deletedAt: null, deletedBy: null });
+        statRow.restored += 1;
+      } else {
+        statRow.existing += 1;
+        ctx.maps.countedExistingTransactions.add(existingId);
+      }
       continue;
     }
 
     const createdAt = timestamp(row, "createdAt", new Date()) as Date;
     const updatedAt = timestamp(row, "updatedAt", createdAt) as Date;
-    await ctx.tx.insert(schema.transactions).values({
+    const deletedBy = ref(ctx, row, ctx.maps.users, trimmed(row, "deletedBy"), "member", "deletedBy");
+    const clientNameSnapshot = text(row, "clientNameSnapshot");
+    const numericCategoryId = categoryId === null ? null : Number(categoryId);
+
+    pending.push({
       id,
       typeId,
       clientId,
-      clientNameSnapshot: text(row, "clientNameSnapshot"),
+      clientNameSnapshot,
       originalAmount,
       originalCurrency: currency,
       amountInr,
@@ -1198,7 +1365,7 @@ async function importTransactions(ctx: ImportContext, rows: NormalizedRow[]): Pr
       exchangeRateDate,
       rateSource,
       description,
-      categoryId: categoryId === null ? null : Number(categoryId),
+      categoryId: numericCategoryId,
       invoiceId,
       recurringId,
       recurringDue,
@@ -1209,16 +1376,45 @@ async function importTransactions(ctx: ImportContext, rows: NormalizedRow[]): Pr
       idempotencyKey,
       payloadHash,
       createdBy,
-      deletedAt: timestamp(row, "deletedAt"),
-      deletedBy: ref(ctx, row, ctx.maps.users, trimmed(row, "deletedBy"), "member", "deletedBy"),
+      deletedAt,
+      deletedBy,
       createdAt,
       updatedAt,
-    }).returning({ id: schema.transactions.id });
+    });
+    if (pending.length >= 250) await flush();
 
     ctx.maps.transactions.set(id, id);
     ctx.maps.transactionsByIdempotency.set(idempotencyKey, id);
-    statRow.inserted += 1;
+    ctx.maps.transactionRows.set(id, {
+      id,
+      typeId,
+      clientId,
+      clientNameSnapshot,
+      originalAmount,
+      originalCurrency: currency,
+      amountInr,
+      exchangeRate,
+      exchangeRateDate,
+      rateSource,
+      description,
+      categoryId: numericCategoryId,
+      invoiceId,
+      recurringId,
+      recurringDue,
+      recurringSettled,
+      txnDate,
+      source,
+      status: "confirmed",
+      idempotencyKey,
+      payloadHash,
+      createdBy,
+      deletedAt,
+      deletedBy,
+      createdAt,
+      updatedAt,
+    });
   }
+  await flush();
 }
 
 async function importBankAccounts(ctx: ImportContext, rows: NormalizedRow[]): Promise<void> {
@@ -1228,12 +1424,38 @@ async function importBankAccounts(ctx: ImportContext, rows: NormalizedRow[]): Pr
     const displayName = requiredTrimmed(row, "displayName");
     const deletedAt = timestamp(row, "deletedAt");
     const nameKey = normalizeNameKey(displayName);
-    const map = deletedAt ? ctx.maps.bankAccountsByNameDeleted : ctx.maps.bankAccountsByNameActive;
-    const existingId = ctx.maps.bankAccounts.get(id) ?? map.get(nameKey);
-    if (existingId) {
-      ctx.maps.bankAccounts.set(id, existingId);
-      statRow.existing += 1;
-      continue;
+    const byId = ctx.maps.bankAccounts.get(id);
+    const byIdRow = byId ? ctx.maps.bankAccountRows.get(byId) : undefined;
+    const byNameActive = ctx.maps.bankAccountsByNameActive.get(nameKey);
+    const byNameDeleted = ctx.maps.bankAccountsByNameDeleted.get(nameKey);
+
+    if (!deletedAt) {
+      const liveId = byIdRow && !byIdRow.deletedAt ? byId : byNameActive;
+      if (liveId) {
+        ctx.maps.bankAccounts.set(id, liveId);
+        statRow.existing += 1;
+        continue;
+      }
+      if (byId && byIdRow?.deletedAt) {
+        await ctx.tx
+          .update(schema.bankAccounts)
+          .set({ deletedAt: null, deletedBy: null, updatedAt: new Date() })
+          .where(eq(schema.bankAccounts.id, byId));
+        await auditRestore(ctx, "bank_account", byId, byIdRow.deletedAt);
+        ctx.maps.bankAccounts.set(id, byId);
+        ctx.maps.bankAccountRows.set(byId, { ...byIdRow, deletedAt: null, deletedBy: null, updatedAt: new Date() });
+        ctx.maps.bankAccountsByNameDeleted.delete(nameKey);
+        ctx.maps.bankAccountsByNameActive.set(nameKey, byId);
+        statRow.restored += 1;
+        continue;
+      }
+    } else {
+      const existingId = byId ?? byNameDeleted;
+      if (existingId) {
+        ctx.maps.bankAccounts.set(id, existingId);
+        statRow.existing += 1;
+        continue;
+      }
     }
 
     const last4 = trimmed(row, "accountLast4");
@@ -1257,7 +1479,8 @@ async function importBankAccounts(ctx: ImportContext, rows: NormalizedRow[]): Pr
     }).returning({ id: schema.bankAccounts.id });
 
     ctx.maps.bankAccounts.set(id, id);
-    map.set(nameKey, id);
+    if (deletedAt) ctx.maps.bankAccountsByNameDeleted.set(nameKey, id);
+    else ctx.maps.bankAccountsByNameActive.set(nameKey, id);
     statRow.inserted += 1;
   }
 }
@@ -1318,6 +1541,14 @@ async function importBankStatements(ctx: ImportContext, rows: NormalizedRow[]): 
 
 async function importBankStatementLines(ctx: ImportContext, rows: NormalizedRow[]): Promise<void> {
   const statRow = stat(ctx, "bank_statement_lines");
+  const pending: Array<typeof schema.bankStatementLines.$inferInsert> = [];
+  const flush = async () => {
+    if (!pending.length) return;
+    await ctx.tx.insert(schema.bankStatementLines).values(pending);
+    statRow.inserted += pending.length;
+    pending.length = 0;
+  };
+
   for (const row of rows) {
     const id = uuid(row, "id") as string;
     const statementId = ref(ctx, row, ctx.maps.statements, uuid(row, "statementId", "statementId"), "statement", "statementId", true) as string;
@@ -1373,7 +1604,13 @@ async function importBankStatementLines(ctx: ImportContext, rows: NormalizedRow[
 
     const createdAt = timestamp(row, "createdAt", new Date()) as Date;
     const updatedAt = timestamp(row, "updatedAt", createdAt) as Date;
-    await ctx.tx.insert(schema.bankStatementLines).values({
+    const clientId = ref(ctx, row, ctx.maps.clients, uuid(row, "clientId", "clientId", false), "client", "clientId");
+    const categoryId = ref(ctx, row, ctx.maps.categories, trimmed(row, "categoryId"), "category", "categoryId");
+    const invoiceId = ref(ctx, row, ctx.maps.invoices, uuid(row, "invoiceId", "invoiceId", false), "invoice", "invoiceId");
+    const importedCategoryId = ref(ctx, row, ctx.maps.categories, trimmed(row, "importedCategoryId"), "category", "importedCategoryId");
+    const reviewedBy = ref(ctx, row, ctx.maps.users, trimmed(row, "reviewedBy"), "member", "reviewedBy");
+
+    pending.push({
       id,
       statementId,
       pageNumber,
@@ -1389,35 +1626,30 @@ async function importBankStatementLines(ctx: ImportContext, rows: NormalizedRow[
       direction,
       classification,
       status,
-      clientId: ref(ctx, row, ctx.maps.clients, uuid(row, "clientId", "clientId", false), "client", "clientId"),
-      categoryId: (() => {
-        const value = ref(ctx, row, ctx.maps.categories, trimmed(row, "categoryId"), "category", "categoryId");
-        return value === null ? null : Number(value);
-      })(),
-      invoiceId: ref(ctx, row, ctx.maps.invoices, uuid(row, "invoiceId", "invoiceId", false), "invoice", "invoiceId"),
+      clientId,
+      categoryId: categoryId === null ? null : Number(categoryId),
+      invoiceId,
       transactionId,
       importedPayloadHash: trimmed(row, "importedPayloadHash"),
-      importedCategoryId: (() => {
-        const value = ref(ctx, row, ctx.maps.categories, trimmed(row, "importedCategoryId"), "category", "importedCategoryId");
-        return value === null ? null : Number(value);
-      })(),
+      importedCategoryId: importedCategoryId === null ? null : Number(importedCategoryId),
       importAttempt,
       fingerprint,
       flags,
       errorCode: trimmed(row, "errorCode"),
       skipReason: trimmed(row, "skipReason"),
-      reviewedBy: ref(ctx, row, ctx.maps.users, trimmed(row, "reviewedBy"), "member", "reviewedBy"),
+      reviewedBy,
       reviewedAt: timestamp(row, "reviewedAt"),
       importedAt,
       createdAt,
       updatedAt,
-    }).returning({ id: schema.bankStatementLines.id });
+    });
+    if (pending.length >= 250) await flush();
 
     ctx.maps.lines.set(id, id);
     ctx.maps.linesByPosition.set(positionKey, id);
     if (transactionId) ctx.maps.linesByTransaction.set(transactionId, id);
-    statRow.inserted += 1;
   }
+  await flush();
 }
 
 async function importCompanyProfile(ctx: ImportContext, rows: NormalizedRow[]): Promise<void> {
@@ -1503,8 +1735,26 @@ async function importCompanyProfile(ctx: ImportContext, rows: NormalizedRow[]): 
 
 async function importAuditEvents(ctx: ImportContext, rows: NormalizedRow[]): Promise<void> {
   const statRow = stat(ctx, "audit_events");
+  const pending: Array<typeof schema.auditEvents.$inferInsert> = [];
+
+  const flush = async () => {
+    if (!pending.length) return;
+    const inserted = await ctx.tx
+      .insert(schema.auditEvents)
+      .values(pending)
+      .onConflictDoNothing()
+      .returning({ id: schema.auditEvents.id });
+    statRow.inserted += inserted.length;
+    statRow.existing += pending.length - inserted.length;
+    pending.length = 0;
+  };
+
   for (const row of rows) {
     const id = uuid(row, "id") as string;
+    if (ctx.maps.auditIds.has(id)) {
+      statRow.existing += 1;
+      continue;
+    }
     const entityType = requiredTrimmed(row, "entityType");
     const entityId = requiredTrimmed(row, "entityId");
     const action = requiredTrimmed(row, "action");
@@ -1512,7 +1762,8 @@ async function importAuditEvents(ctx: ImportContext, rows: NormalizedRow[]): Pro
     const performedBy = ref(ctx, row, ctx.maps.users, trimmed(row, "performedBy"), "member", "performedBy", true) as string;
     const createdAt = timestamp(row, "createdAt", new Date()) as Date;
 
-    const [inserted] = await ctx.tx.insert(schema.auditEvents).values({
+    ctx.maps.auditIds.add(id);
+    pending.push({
       id,
       entityType,
       entityId,
@@ -1523,16 +1774,20 @@ async function importAuditEvents(ctx: ImportContext, rows: NormalizedRow[]): Pro
       afterState: jsonValue(row, "afterState"),
       metadata: jsonValue(row, "metadata"),
       createdAt,
-    }).onConflictDoNothing().returning({ id: schema.auditEvents.id });
-    if (inserted) statRow.inserted += 1;
-    else statRow.existing += 1;
+    });
+    if (pending.length >= 250) await flush();
   }
+  await flush();
 }
 
 async function importChatSessions(ctx: ImportContext, rows: NormalizedRow[]): Promise<void> {
   const statRow = stat(ctx, "chat_sessions");
   for (const row of rows) {
     const userId = ref(ctx, row, ctx.maps.users, trimmed(row, "userId"), "member", "userId", true) as string;
+    if (ctx.maps.chatUserIds.has(userId)) {
+      statRow.existing += 1;
+      continue;
+    }
     const draft = jsonValue(row, "draft", true);
     const session = jsonValue(row, "session", true);
     const updatedAt = timestamp(row, "updatedAt", new Date()) as Date;
@@ -1542,7 +1797,11 @@ async function importChatSessions(ctx: ImportContext, rows: NormalizedRow[]): Pr
       session,
       updatedAt,
     }).onConflictDoNothing().returning({ userId: schema.chatSessions.userId });
-    if (inserted) statRow.inserted += 1;
-    else statRow.existing += 1;
+    if (inserted) {
+      ctx.maps.chatUserIds.add(userId);
+      statRow.inserted += 1;
+    } else {
+      statRow.existing += 1;
+    }
   }
 }

@@ -21,7 +21,7 @@ const README = [
   "One text-lossless copy of every record in the finance database: members, clients, categories, transactions, recurring expenses, invoices and items, bank accounts, statements and statement rows, company profile, audit log and Finance AI sessions.",
   "",
   "How to restore",
-  "Settings → Data → Import backup. Choose this .xlsx file. The import runs as one database transaction and only adds records that are missing from the target database. Existing records are never overwritten. A report shows what was added and how records were linked.",
+  "Settings → Data → Import backup. Choose this .xlsx file. The import runs as one database transaction. It adds records missing from the target database and restores records that were deleted there when this backup still has them live. Existing live records are never overwritten. A report shows what was added, restored and re-linked.",
   "",
   "What is not included",
   "Database connection strings and other environment secrets are never exported. Member sign-in hashes are included so member accounts survive a full restore; the primary admin password still comes from the server environment.",
@@ -89,7 +89,7 @@ export async function buildBackupExport(userId: string): Promise<BackupExportRes
     dataHash,
     rowCounts: JSON.stringify(snapshot.rowCounts),
     tables: JSON.stringify(snapshot.tableMeta),
-    notes: "Text-lossless export. Import only adds records missing from the target database.",
+    notes: "Text-lossless export. Import adds missing records and restores records deleted in the target database when this file still has them live.",
   };
 
   const bytes = await buildBackupWorkbook({ meta, readme: README, sheets: snapshot.sheets });

@@ -108,9 +108,10 @@ export function BackupActions() {
           <DialogHeader>
             <DialogTitle className="text-title-md">Import backup</DialogTitle>
             <DialogDescription>
-              Choose the Excel file downloaded from Export backup. Only records missing from this database are added;
-              existing records stay exactly as they are. The whole import runs as one transaction, so a failure saves
-              nothing.
+              Choose the Excel file downloaded from Export backup. Missing records are added, and records deleted here
+              are restored when the backup still has them live. Bank statement rows that still point at a deleted
+              transaction are reconnected. Everything else stays exactly as it is. The whole import runs as one
+              transaction, so a failure saves nothing.
             </DialogDescription>
           </DialogHeader>
 
@@ -153,10 +154,10 @@ export function BackupActions() {
                     Choose another file
                   </Button>
                 ) : null}
-                {report.ok && report.dryRun && report.totals.inserted > 0 ? (
+                {report.ok && report.dryRun && (report.totals.inserted > 0 || report.totals.restored > 0) ? (
                   <Button type="button" onClick={() => submit(false)} disabled={busy !== null}>
                     <Upload aria-hidden />
-                    {busy === "import" ? "Importing…" : "Import missing records"}
+                    {busy === "import" ? "Importing…" : "Apply import"}
                   </Button>
                 ) : (
                   <Button
@@ -197,7 +198,7 @@ function ImportReport({ report }: { report: BackupImportReport }) {
   const title = !report.ok ? "Import stopped" : report.dryRun ? "Backup checked" : "Backup imported";
   const tone = !report.ok ? "text-destructive" : report.dryRun ? "text-warning" : "text-success";
   const relations = report.relations.reduce((sum, relation) => sum + relation.count, 0);
-  const tables = report.tables.filter((table) => table.inserted > 0 || table.existing > 0);
+  const tables = report.tables.filter((table) => table.inserted > 0 || table.restored > 0 || table.existing > 0);
 
   return (
     <div className="flex flex-col gap-4" aria-live="polite">
@@ -213,8 +214,9 @@ function ImportReport({ report }: { report: BackupImportReport }) {
         </div>
       </div>
 
-      <dl className="grid grid-cols-3 gap-3">
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Added" value={report.totals.inserted} />
+        <Stat label="Restored" value={report.totals.restored} />
         <Stat label="Already present" value={report.totals.existing} />
         <Stat label="Re-linked" value={relations} />
       </dl>
@@ -226,6 +228,7 @@ function ImportReport({ report }: { report: BackupImportReport }) {
               <tr>
                 <th scope="col" className="px-3 py-2 text-left font-medium">Table</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Added</th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">Restored</th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">Already present</th>
               </tr>
             </thead>
@@ -234,6 +237,7 @@ function ImportReport({ report }: { report: BackupImportReport }) {
                 <tr key={table.sheet}>
                   <td className="px-3 py-2 text-foreground">{table.label}</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums">{table.inserted}</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums">{table.restored}</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">{table.existing}</td>
                 </tr>
               ))}
